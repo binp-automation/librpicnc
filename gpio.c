@@ -1,8 +1,8 @@
 #include <wiringPi.h>
 
-#define EN  7 // BCM GPIO 4
-#define DIR 0 // BCM GPIO 17
-#define PUL 1 // BCM GPIO 18
+#define EN  22 // BCM GPIO 22
+#define DIR 17 // BCM GPIO 17
+#define PUL 18 // BCM GPIO 18
 
 #define PWM_FREQ 19.2e6
 #define PWM_RANGE 1024
@@ -32,7 +32,7 @@ void gpio_set_clock(double freq) {
 }
 
 void gpio_init() {
-	wiringPiSetup();
+	wiringPiSetupGpio();
 
 	pinMode(EN,  OUTPUT);
 	pinMode(DIR, OUTPUT);
