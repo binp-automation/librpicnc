@@ -1,13 +1,29 @@
-CFLAGS=-Wall $(shell pkg-config --cflags gtk+-2.0)
-LFLAGS=$(shell pkg-config --libs gtk+-2.0) -lwiringPi
+CFLAGS=$(shell pkg-config --cflags gtk+-2.0) -Wall
+LFLAGS=$(shell pkg-config --libs gtk+-2.0) -ldl
 
-all: motor
+BIN_DIR=build
+OBJ_DIR=build/obj
 
-motor: main.o gpio.o
+.PHONY: all dirs drivers
+
+all: dirs drivers $(BIN_DIR)/cnc-gui
+
+
+$(BIN_DIR)/cnc-gui: $(OBJ_DIR)/main.o $(OBJ_DIR)/drivers/driver.o
 	gcc $(LFLAGS) $^ -o $@
 
-main.o: main.c gui.h gpio.h
+$(OBJ_DIR)/main.o: main.c
 	gcc -c $(CFLAGS) $< -o $@
 
-gpio.o: gpio.c gpio.h
-	gcc -c $(CFLAGS) $< -o $@
+
+drivers:
+	cd $@; make all OBJ_DIR=../$(OBJ_DIR)/$@ BIN_DIR=../$(BIN_DIR)/$@
+
+
+dirs: $(BIN_DIR) $(OBJ_DIR)
+
+$(BIN_DIR):
+	mkdir -p $@
+
+$(OBJ_DIR):
+	mkdir -p $@

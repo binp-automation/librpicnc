@@ -1,9 +1,14 @@
-#include "gpio.h"
-#include "gui.h"
+#include <stdlib.h>
+#include <stdio.h>
 
-int main(int argc, char *argv[]) {
-    gpio_init();
-    gui_main(argc, argv);
-    gpio_quit();
-    return 0;
+#include "drivers/driver.h"
+
+int	main(int argc, char *argv[]) {
+	Driver drv;
+	const char * const params[] = {NULL};
+	load_driver(&drv, "./drivers/test", params);
+
+	free_driver(&drv);
+
+	return 0;
 }
