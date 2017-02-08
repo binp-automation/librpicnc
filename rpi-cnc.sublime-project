@@ -18,5 +18,10 @@
 			"shell_cmd": "if make; then cd build; ./cnc-gui; fi",
 			"working_dir": "${project_path}"
 		},
+		{
+			"name": "Run",
+			"shell_cmd": "./cnc-gui",
+			"working_dir": "${project_path}/build"
+		},
 	]
 }

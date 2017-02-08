@@ -3,18 +3,14 @@ CFLAGS=-Wall
 
 .PHONY: all dirs gpio test
 
-all: dirs $(OBJ_DIR)/driver.o test # gpio
-
-
-$(OBJ_DIR)/driver.o: driver.c driver.h export.h
-	gcc -c $(CFLAGS) $< -o $@
+all: dirs test # gpio
 
 
 test:
-	cd $@; make all OBJ_DIR=../$(OBJ_DIR)/$@ BIN_DIR=../$(BIN_DIR)/$@
+	cd $@; make all OBJ_DIR=../$(OBJ_DIR)/$@ BIN_DIR=../$(BIN_DIR)/$@ INC_DIR=../$(INC_DIR)
 
 gpio:
-	cd $@; make all OBJ_DIR=../$(OBJ_DIR)/$@ BIN_DIR=../$(BIN_DIR)/$@
+	cd $@; make all OBJ_DIR=../$(OBJ_DIR)/$@ BIN_DIR=../$(BIN_DIR)/$@ INC_DIR=../$(INC_DIR)
 
 
 dirs: $(BIN_DIR) $(OBJ_DIR)

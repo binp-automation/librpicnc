@@ -1,15 +1,17 @@
-#include "../export.h"
-
 #include <stdlib.h>
 
-typedef struct DriverImpl {
+#include <export.h>
 
-} DriverImpl;
 
-DriverImpl *create_driver(const char * const params[]) {
-	return malloc(sizeof(DriverImpl));
+typedef struct CNC_DriverImpl {
+
+} CNC_DriverImpl;
+
+CNC_DriverImpl *create_driver(void *params[]) {
+	return malloc(sizeof(CNC_DriverImpl));
 }
 
-void destroy_driver(DriverImpl *driver) {
+int destroy_driver(CNC_DriverImpl *driver) {
 	free(driver);
+	return 0;
 }
