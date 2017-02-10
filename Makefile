@@ -1,4 +1,4 @@
-CFLAGS=$(shell pkg-config --cflags gtk+-2.0) -Wall
+CFLAGS=$(shell pkg-config --cflags gtk+-2.0) -Wall -fPIC
 LFLAGS=$(shell pkg-config --libs gtk+-2.0) -ldl
 
 BIN_DIR=build

@@ -12,11 +12,20 @@ AxisView *axis_view_create() {
 }
 
 int	main(int argc, char *argv[]) {
-	void *params[] = {"size", (void*) 1000, NULL};
-	CNC_Driver *drv = cnc_create_driver("./drivers/test", params);
-
-	if (drv != NULL) {
-		cnc_destroy_driver(drv);
+	CNC_Driver *drv = cnc_create_driver("./drivers/test", NULL);
+	if (drv == NULL) {
+		return 1;
 	}
+
+	void *params[] = {"size", (void*) 1000, NULL};
+	CNC_Axis *ax = cnc_driver_create_axis(drv, params);
+	if (ax == NULL) {
+		return 2;
+	}
+
+	cnc_destroy_axis(ax);
+
+	cnc_destroy_driver(drv);
+
 	return 0;
 }

@@ -1,4 +1,4 @@
-CFLAGS=-Wall
+CFLAGS=-Wall -fPIC
 LFLAGS=
 
 .PHONY: all dirs

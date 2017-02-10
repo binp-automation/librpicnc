@@ -15,21 +15,20 @@ struct CNC_Driver {
 	void *module;
 };
 
+struct CNC_Axis {
+	CNC_AxisImpl *impl;
+	void **fnptrs;
+};
+
 CNC_Driver *cnc_create_driver(const char *path, void *params[]);
 int cnc_destroy_driver(CNC_Driver *driver);
 
-CNC_Axis *cnc_driver_create_axis(CNC_Driver *self, void *params[]);
-
-
-struct CNC_Axis {
-	CNC_AxisImpl *impl;
-	void *fnptrs[16];
-};
+CNC_Axis *cnc_driver_create_axis(CNC_Driver *driver, void *params[]);
 
 int cnc_destroy_axis(CNC_Axis *self);
 
-uint32_t cnc_axis_get_counter(CNC_Axis *self);
-void cnc_axis_set_counter(CNC_Axis *self, uint32_t value);
+int32_t cnc_axis_get_counter(CNC_Axis *self);
+void cnc_axis_set_counter(CNC_Axis *self, int32_t value);
 
 void cnc_axis_set_handler(CNC_Axis *self, void (*handler)(CNC_AxisEvent event, void *data), void *data);
 

@@ -1,6 +1,3 @@
-CFLAGS=-Wall
-
-
 .PHONY: all dirs gpio test
 
 all: dirs test # gpio
