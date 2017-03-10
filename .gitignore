@@ -1,2 +1,5 @@
-build
-*.sublime-workspace
+history
+swave
+ramp
+*.o
+*.swp
