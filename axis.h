@@ -22,6 +22,7 @@ typedef struct Axis {
 	int right_pin;
 	int length;
 	int position;
+	int ramp;
 	
 	int _mode;
 	int _dir;
@@ -29,7 +30,7 @@ typedef struct Axis {
 	uint32_t _last_tick;
 	uint32_t _broken;
 	uint32_t _ticks;
-	int _delay_us;
+	int _delay;
 	int _wave_id;
 } Axis;
 
@@ -38,18 +39,44 @@ void _stop_all() {
 	gpioWaveClear();
 }
 
-int _wave_gen_step(int pin, int delay_us) {
+int _wave_gen_step(int pin, int delay) {
 	gpioPulse_t pulses[2];
-	pulses[0].usDelay = delay_us/2;
+	pulses[0].usDelay = delay/2;
 	pulses[0].gpioOn = 1<<pin;
 	pulses[0].gpioOff = 0;
-	pulses[1].usDelay = (delay_us - 1)/2 + 1;
+	pulses[1].usDelay = (delay - 1)/2 + 1;
 	pulses[1].gpioOn = 0;
 	pulses[1].gpioOff = 1<<pin;
 	
 	gpioWaveAddNew();
 
 	gpioWaveAddGeneric(2, pulses);
+	return gpioWaveCreate();
+}
+
+int _wave_gen_ramp(int pin, int begin_delay, int end_delay, int steps) {
+	int i;
+	gpioPulse_t *pulses = (gpioPulse_t *) malloc(sizeof(gpioPulse_t)*2*steps);
+	
+	for (i = 0; i < 2*steps; ++i) {
+		float bf = 1.0/begin_delay;
+		float ef = 1.0/end_delay;
+		float f = bf + (ef - bf)*(0.5*i + 0.25)/steps;
+		int delay = 1.0/f;
+		// delay = delay < begin_delay ? begin_delay : (delay > end_delay ? end_delay : delay);
+		pulses[i].usDelay = delay/2;
+		if (i % 2 == 0) {
+			pulses[i].gpioOn = 1<<pin;
+			pulses[i].gpioOff = 0;
+		} else {
+			pulses[i].gpioOn = 0;
+			pulses[i].gpioOff = 1<<pin;
+		}
+	}
+	
+	gpioWaveAddNew();
+
+	gpioWaveAddGeneric(2*steps, pulses);
 	return gpioWaveCreate();
 }
 
@@ -135,6 +162,10 @@ int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	axis->left_pin = left;
 	axis->right_pin = right;
 	
+	axis->position = 0;
+	axis->length = 0;
+	axis->ramp = 0;
+	
 	axis->_mode = MODE_NONE;
 	axis->_stage = STAGE_NONE;
 
@@ -154,7 +185,7 @@ int _axis_scan(Axis *axis, int dir) {
 		return 0;
 	}
 	
-	axis->_wave_id = _wave_gen_step(axis->step_pin, axis->_delay_us);
+	axis->_wave_id = _wave_gen_step(axis->step_pin, axis->_delay);
 	if (axis->_wave_id < 0) {
 		printf("error create wave\n");
 		return -1;
@@ -168,12 +199,12 @@ int _axis_scan(Axis *axis, int dir) {
 	gpioWaveDelete(axis->_wave_id);
 	axis->_wave_id = -1;
 	
-	return axis->_ticks/axis->_delay_us;
+	return axis->_ticks/axis->_delay;
 }
 
 int axis_scan(Axis *axis) {
 	axis->_mode = MODE_SCAN;
-	axis->_delay_us = 1000;
+	axis->_delay = 1000;
 	
 	axis->_stage = STAGE_SCAN_RL;
 	if (_axis_scan(axis, 0) < 0) {
@@ -207,26 +238,31 @@ int axis_scan(Axis *axis) {
 
 int _axis_move_rel(Axis *axis, int steps, int dir) {
 	axis->_mode = MODE_MOVE;
-	axis->_delay_us = 1000;
+	axis->_delay = 1000;
 	
-	int wave = _wave_gen_step(axis->step_pin, axis->_delay_us);
-	if (wave < 0) {
+	int wave_begin, wave_step, wave_end;
+	wave_begin = _wave_gen_ramp(axis->step_pin, 1000000, axis->_delay, axis->ramp);
+	wave_step = _wave_gen_step(axis->step_pin, axis->_delay);
+	wave_end = _wave_gen_ramp(axis->step_pin, axis->_delay, 1000000, axis->ramp);
+	if (wave_begin < 0 || wave_step < 0 || wave_end < 0) {
 		fprintf(stderr, "error create wave\n");
 	}
-	axis->_wave_id = wave;
+
 	char comp[4] = {
 		0xff & (steps >>  0), 0xff & (steps >>  8), 
 		0xff & (steps >> 16), 0xff & (steps >> 24)
 	};
 	char chain[] = {
+		wave_begin,
 		255, 0,
 			255, 0,
-				wave,
+				wave_step,
 			255, 1, 255, 255,
 		255, 1, comp[2], comp[3],
 		255, 0,
-			wave,
-		255, 1, comp[0], comp[1]
+			wave_step,
+		255, 1, comp[0], comp[1],
+		wave_end
 	};
 	
 	if (_set_dir_safe(axis, dir) != 0) {
@@ -242,9 +278,11 @@ int _axis_move_rel(Axis *axis, int steps, int dir) {
 	}
 	_wave_wait();
 	
-	gpioWaveDelete(axis->_wave_id);
+	gpioWaveDelete(wave_begin);
+	gpioWaveDelete(wave_step);
+	gpioWaveDelete(wave_end);
 	if (axis->_broken) {
-		return axis->_ticks/axis->_delay_us;
+		return axis->_ticks/axis->_delay;
 	}
 	return steps;
 }

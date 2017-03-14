@@ -46,6 +46,9 @@ int main(int argc, char *argv[]) {
 	}
 	
 	gpioDelay(10000);
+	
+	axis_y.ramp = 100;
+	
 	printf("move ...\n");
 	int move;
 	/*
