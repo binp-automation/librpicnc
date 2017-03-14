@@ -1,5 +1,5 @@
-history
-swave
-ramp
-*.o
+build
+*.geany
 *.swp
+*.o
+

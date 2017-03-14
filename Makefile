@@ -1,13 +1,30 @@
 CF=-Wall
 LF=-pthread -lpigpio
 
-.PHONY: all
+BUILD_DIR=build
 
-all: ramp
+BIN=$(BUILD_DIR)/cnc
 
-ramp: main.o
+.PHONY: all clean dirs cnc pigpio
+
+all: dirs pigpio cnc
+
+cnc: $(BIN)
+
+$(BIN): $(BUILD_DIR)/main.o
 	gcc ${LF} $^ -o $@
 
-main.o: main.c axis.h
+$(BUILD_DIR)/main.o: main.c axis.h pigpio/pigpio.h
 	gcc ${CF} -c $< -o $@
 
+dirs:
+	mkdir -p $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)/pigpio
+
+pigpio:
+	cd pigpio; make lib
+	cp pigpio/libpigpio*.so ./$(BUILD_DIR)/pigpio/
+
+clean: 
+	cd pigpio; make clean
+	rm -rf $(BUILD_DIR)
