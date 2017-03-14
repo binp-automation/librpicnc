@@ -1,5 +1,5 @@
 CF=-Wall
-LF=-pthread -lpigpio
+LF=-lm -pthread -lpigpio
 
 BUILD_DIR=build
 

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <unistd.h>
 #include <signal.h>
 
@@ -15,6 +16,8 @@ void stop_handler(int signo) {
 }
 
 int main(int argc, char *argv[]) {
+	int i;
+	
 	printf("start\n");
 	if (gpioInitialise() < 0) {
 		printf("error gpio init\n");
@@ -32,7 +35,7 @@ int main(int argc, char *argv[]) {
 
 	printf("scan ...\n");
 	int scan;
-
+	/*
 	scan = axis_scan(&axis_x, freq);
 	if (scan < 0) {
 		fprintf(stderr, "scan failed\n");
@@ -40,7 +43,7 @@ int main(int argc, char *argv[]) {
 		printf("scan x done %d\n", scan);
 	}
 	axis_x.length *= 0.75;
-
+	*/
 	scan = axis_scan(&axis_y, freq);
 	if (scan < 0) {
 		fprintf(stderr, "scan failed\n");
@@ -52,12 +55,39 @@ int main(int argc, char *argv[]) {
 	
 	printf("move ...\n");
 	int move;
-
+	/*
 	move = axis_move_abs(&axis_x, freq, axis_x.length/2);
 	printf("move x %d %d\n", move, axis_x.position);
-
+	*/
 	move = axis_move_abs(&axis_y, freq, axis_y.length/2);
 	printf("move y %d %d\n", move, axis_y.position);
+	
+	
+	printf("play ...\n");
+	Axis *axis = &axis_y;
+	axis->accel = 0.01;
+	float dur = 0.5; // sec
+	float base_freq = 500; // Hz
+	int dir = 0;
+	int buffer = 0.2*axis->length;
+	int tones[] = {0, 2, 4, 5, 7, 9, 11, 12, 12, 11, 9, 7, 5, 4, 2, 0};
+	for (i = 0; i < sizeof(tones)/sizeof(tones[0]); ++i) {
+		float freq = base_freq*pow(2, ((float) tones[i])/12);
+		int32_t steps = freq*dur;
+		int lf = axis->position - steps > buffer;
+		int rf = axis->position + steps < axis->length - buffer;
+		if (!lf && !rf) {
+			fprintf(stderr, "cannot move\n");
+			break;
+		}
+		if ((dir && !rf) || (!dir && !lf)) {
+			dir = !dir;
+		}
+		if(!dir) {
+			steps = -steps;
+		}
+		axis_move_rel(&axis_y, freq, steps);
+	}
 	
 	// while(!done) {
 	//	gpioDelay(100000);
