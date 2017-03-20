@@ -3,6 +3,7 @@ LF=-lm -pthread -lpigpio
 
 BUILD_DIR=build
 
+HEADERS=pigpio/pigpio.h ringbuffer.h command.h axis.h generator.h
 BIN=$(BUILD_DIR)/cnc
 
 .PHONY: all clean dirs cnc pigpio
@@ -14,7 +15,7 @@ cnc: $(BIN)
 $(BIN): $(BUILD_DIR)/main.o
 	gcc ${LF} $^ -o $@
 
-$(BUILD_DIR)/main.o: main.c axis.h pigpio/pigpio.h
+$(BUILD_DIR)/main.o: main.c $(HEADERS)
 	gcc ${CF} -c $< -o $@
 
 dirs:
