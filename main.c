@@ -8,20 +8,32 @@
 
 #include "generator.h"
 
-volatile int done = 0;
 
-void stop_handler(int signo) {
-	done = 1;
+int gen_wave(void *data) {
+	int i;
+	gpioPulse_t pulses[3];
+
+	pulses[0].usDelay = (*(int*) data)*(1 + (rand() % 3));
+	pulses[0].gpioOn = 0;
+	pulses[0].gpioOff = 0;
+
+	// dummy last pulses (never executed)
+	for (i = 0; i < 2; ++i) {
+		pulses[1 + i].usDelay = 1;
+		pulses[1 + i].gpioOn = 0;
+		pulses[1 + i].gpioOff = 0;
+	}
+	
+	gpioWaveAddNew();
+
+	gpioWaveAddGeneric(sizeof(pulses)/sizeof(pulses[0]), pulses);
+	int wave = gpioWaveCreate();
+	return wave;
 }
 
-void push_cmds(RB *rb, void *data) {
-	Cmd cmd = cmd_wait(1000000);
-	while (!rb_full(rb) && (*(int*)data)-- > 0) {
-		rb_push(rb, (uint8_t*) &cmd);
-	}
-} 
-
 int main(int argc, char *argv[]) {
+	srand(time(NULL));
+
 	printf("start\n");
 	if (gpioInitialise() < 0) {
 		printf("error gpio init\n");
@@ -29,10 +41,10 @@ int main(int argc, char *argv[]) {
 	}
 	
 	Generator gen;
-	gen_init(&gen, 2, 0);
+	gen_init(&gen);
 	
-	int cnt = 10;
-	gen_run(&gen, push_cmds, &cnt);
+	int delay = 300000; // us
+	gen_run(&gen, gen_wave, &delay);
 	
 	gen_free(&gen);
 	

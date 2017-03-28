@@ -5,150 +5,100 @@
 #include <math.h>
 #include <unistd.h>
 #include <signal.h>
+#include <assert.h>
 
 #include <pigpio.h>
 
 #include "ringbuffer.h"
-#include "command.h"
-#include "axis.h"
+
 
 #define FREQ_TO_US(freq) \
 	((uint32_t) (1e6/(freq)))
 
-#define CMD_BUFSIZE   0x40
-#define WAVE_BUFSIZE  0x40
-#define WAVE_LEN      0x100
+#define WAVE_BUFSIZE  0x4
 
-#define GEN_DELAY 10000 // us
+#define GEN_DELAY 100000 // us
 
 typedef struct {
-	int naxes;
-	Axis axes[MAX_AXES];
-	float accel;
-	
-	RB *cmdbuf;
 	RB *wavebuf;
-	Cmd cmd;
 } Generator;
 
 
-void _gen_free_rbs(Generator *gen) {
-	if (gen->cmdbuf) { free(gen->cmdbuf); }
-	if (gen->wavebuf) { free(gen->wavebuf); }
-}
-
-int gen_init(Generator *gen, int naxes, float accel) {
-	gen->naxes = naxes;
-	gen->accel = accel;
-
-	gen->cmdbuf = rb_init(CMD_BUFSIZE, sizeof(Cmd));
+int gen_init(Generator *gen) {
 	gen->wavebuf = rb_init(WAVE_BUFSIZE, sizeof(int));
-	if (!gen->cmdbuf || !gen->wavebuf) {
+	if (!gen->wavebuf) {
 		goto err_rbs;
 	}
-	
-	gen->cmd = cmd_none();
 	
 	return 0;
 	
 err_rbs:
-	_gen_free_rbs(gen);
 	return 1;
 }
 
 int gen_free(Generator *gen) {
-	_gen_free_rbs(gen);
-	return 0;
-}
+	if (gen->wavebuf) {
+		rb_free(gen->wavebuf);
+		gen->wavebuf = NULL;
+		return 0;
+	}
 
-int _gen_make_delay(Generator *gen, uint32_t delay) {
-	gpioPulse_t pulses[2];
-	
-	pulses[0].usDelay = delay;
-	pulses[0].gpioOn = 0;
-	pulses[0].gpioOff = 0;
-	pulses[1].usDelay = 0;
-	pulses[1].gpioOn = 0;
-	pulses[1].gpioOff = 0;
-	
-	gpioWaveAddNew();
-
-	gpioWaveAddGeneric(2, pulses);
-	return gpioWaveCreate();
-}
-
-int _gen_push_motion(Generator *gen, float speed) {
-	return -1;
+	return 1;
 }
 
 void _gen_pop_waves(Generator *gen) {
-	int wave = -1;
+	int cur_wave = -1;
 	if (gpioWaveTxBusy()) {
-		wave = gpioWaveTxAt();
+		cur_wave = gpioWaveTxAt();
+		printf("wave tx busy on wave %d\n", cur_wave);
+	} else {
+		printf("wave tx NOT busy\n");
 	}
-	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != wave) {
-		int w;
-		rb_pop(gen->wavebuf, (uint8_t*) &w);
-		gpioWaveDelete(w);
-	}
-}
-
-void _gen_push_waves(Generator *gen) {
-	while (!rb_full(gen->wavebuf)) {
-		int wave = -1;
-		switch (gen->cmd.type) {
-			case CMD_NONE: break;
-			case CMD_WAIT: {
-				printf("wait %d\n", gen->cmd.wait.duration);
-				wave = _gen_make_delay(gen, gen->cmd.wait.duration);
-				gen->cmd = cmd_none();
-			} break;
-			case CMD_MOVE: {
-				printf("move\n");
-				/*
-				int i, naxes = gen->naxes;
-				for (i = 0; i < naxes; ++i) {
-					gen->axes[i].steps = gen->cmd.move.steps[i];
-				}
-				_gen_push_waves(gen, gen->cmd.move.speed);
-				*/
-			} break;
-			default: {
-				fprintf(stderr, "invalid cmd type: %d\n", gen->cmd.type);
-			} break;
-		}
-		
-		printf("wave %d\n", wave);
-		if (wave < 0) { break; }
-		
-		rb_push(gen->wavebuf, (uint8_t*) &wave);
-		gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT_SYNC);
-		printf("done\n");
+	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != cur_wave) {
+		int wave;
+		rb_pop(gen->wavebuf, (uint8_t*) &wave);
+		printf("pop wave %d\n", wave);
+		gpioWaveDelete(wave);
 	}
 }
 
-void _gen_pop_cmds(Generator *gen) {
-	if (gen->cmd.type == CMD_NONE) {
-		rb_pop(gen->cmdbuf, (uint8_t*) &gen->cmd);
+void _gen_push_wave(Generator *gen, int wave) {
+	if (wave < 0) {
+		return;
 	}
+
+	assert(!rb_full(gen->wavebuf));
+	
+	printf("push wave %d\n", wave);
+
+	if (!rb_empty(gen->wavebuf)) {
+		int prev_wave = *(int*) rb_head(gen->wavebuf);
+		printf("rb non-empty, last wave: %d\n", prev_wave);
+		rawCbs_t *src_cbp = rawWaveCBAdr(rawWaveInfo(prev_wave).topCB - 1);
+		rawCbs_t *dst_cbp = rawWaveCBAdr(rawWaveInfo(wave).botCB);
+		src_cbp->next = dst_cbp->next;
+	} else {
+		printf("rb empty\n");
+		int n = gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT);
+		printf("tx send, ret: %d\n", n);
+	}
+	rb_push(gen->wavebuf, (uint8_t*) &wave);
 }
 
-int gen_run(Generator *gen, void(*push_cmds_cb)(RB *cmdbuf, void *userdata), void *userdata) {
+int gen_run(Generator *gen, int (*get_wave_cb)(void*), void *user_data) {
 	for (;;) {
-		if (!rb_full(gen->cmdbuf)) {
-			push_cmds_cb(gen->cmdbuf, userdata);
+		while (!rb_full(gen->wavebuf)) {
+			int wave = get_wave_cb(user_data);
+			if (wave < 0) {
+				break;
+			}
+			_gen_push_wave(gen, wave);
 		}
-		if (!rb_empty(gen->cmdbuf)) {
-			_gen_pop_cmds(gen);
-		} else {
-			break;
-		}
-		
+
 		if (!rb_empty(gen->wavebuf)) {
 			_gen_pop_waves(gen);
-		}
-		if (!rb_full(gen->wavebuf)) {
-			_gen_push_waves(gen);
+		} else {
+			break;
 		}
 		
 		gpioDelay(GEN_DELAY);
