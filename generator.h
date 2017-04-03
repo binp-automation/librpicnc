@@ -10,7 +10,7 @@
 #include <pigpio.h>
 
 #include "ringbuffer.h"
-
+define_ringbuffer(RB, rb, int)
 
 #define FREQ_TO_US(freq) \
 	((uint32_t) (1e6/(freq)))
@@ -27,7 +27,7 @@ typedef struct {
 
 
 int gen_init(Generator *gen) {
-	gen->wavebuf = rb_init(WAVE_BUFSIZE, sizeof(int));
+	gen->wavebuf = rb_init(WAVE_BUFSIZE);
 	if (!gen->wavebuf) {
 		goto err_rbs;
 	}
@@ -59,7 +59,7 @@ void _gen_pop_waves(Generator *gen) {
 	}
 	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != cur_wave) {
 		int wave;
-		rb_pop(gen->wavebuf, (uint8_t*) &wave);
+		rb_pop(gen->wavebuf, &wave);
 		rawWaveInfo_t info = rawWaveInfo(wave);
 		gen->counter += (info.topCB - info.botCB) - 1;
 		printf("pop wave %d\n", wave);
@@ -87,7 +87,7 @@ void _gen_push_wave(Generator *gen, int wave) {
 		int n = gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT);
 		printf("tx send, ret: %d\n", n);
 	}
-	rb_push(gen->wavebuf, (uint8_t*) &wave);
+	rb_push(gen->wavebuf, &wave);
 }
 
 int gen_run(Generator *gen, int (*get_wave_cb)(void*), void *user_data) {
@@ -122,4 +122,5 @@ int gen_stop(Generator *gen) {
 		gen->counter += gpioWaveTxCbPos();
 		gpioWaveTxStop();
 	}
+	return 0;
 }
