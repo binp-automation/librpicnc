@@ -21,6 +21,8 @@
 
 typedef struct {
 	RB *wavebuf;
+	int counter;
+	int run;
 } Generator;
 
 
@@ -29,7 +31,8 @@ int gen_init(Generator *gen) {
 	if (!gen->wavebuf) {
 		goto err_rbs;
 	}
-	
+	gen->counter = 0;
+	gen->run = 0;
 	return 0;
 	
 err_rbs:
@@ -57,6 +60,8 @@ void _gen_pop_waves(Generator *gen) {
 	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != cur_wave) {
 		int wave;
 		rb_pop(gen->wavebuf, (uint8_t*) &wave);
+		rawWaveInfo_t info = rawWaveInfo(wave);
+		gen->counter += (info.topCB - info.botCB) - 1;
 		printf("pop wave %d\n", wave);
 		gpioWaveDelete(wave);
 	}
@@ -86,7 +91,9 @@ void _gen_push_wave(Generator *gen, int wave) {
 }
 
 int gen_run(Generator *gen, int (*get_wave_cb)(void*), void *user_data) {
-	for (;;) {
+	gen->run = 1;
+
+	while (gen->run) {
 		while (!rb_full(gen->wavebuf)) {
 			int wave = get_wave_cb(user_data);
 			if (wave < 0) {
@@ -94,15 +101,25 @@ int gen_run(Generator *gen, int (*get_wave_cb)(void*), void *user_data) {
 			}
 			_gen_push_wave(gen, wave);
 		}
-
+		
 		if (!rb_empty(gen->wavebuf)) {
 			_gen_pop_waves(gen);
 		} else {
 			break;
 		}
-		
+
 		gpioDelay(GEN_DELAY);
 	}
-	
+	gen->run = 0;
+
 	return 0;
+}
+
+int gen_stop(Generator *gen) {
+	gen->run = 0;
+	if (gpioWaveTxBusy()) {
+		_gen_pop_waves(gen);
+		gen->counter += gpioWaveTxCbPos();
+		gpioWaveTxStop();
+	}
 }
