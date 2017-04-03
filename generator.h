@@ -12,25 +12,23 @@
 #include "ringbuffer.h"
 define_ringbuffer(RB, rb, int)
 
-#define FREQ_TO_US(freq) \
-	((uint32_t) (1e6/(freq)))
-
-#define WAVE_BUFSIZE  0x4
-
-#define GEN_DELAY 100000 // us
+#define GEN_DELAY 10000 // us
 
 typedef struct {
 	RB *wavebuf;
+	int current;
 	int counter;
 	int run;
 } Generator;
 
+int gen_clear(Generator *gen);
 
-int gen_init(Generator *gen) {
-	gen->wavebuf = rb_init(WAVE_BUFSIZE);
+int gen_init(Generator *gen, int bufsize) {
+	gen->wavebuf = rb_init(bufsize);
 	if (!gen->wavebuf) {
 		goto err_rbs;
 	}
+	gen->current = -1;
 	gen->counter = 0;
 	gen->run = 0;
 	return 0;
@@ -40,29 +38,19 @@ err_rbs:
 }
 
 int gen_free(Generator *gen) {
-	if (gen->wavebuf) {
-		rb_free(gen->wavebuf);
-		gen->wavebuf = NULL;
-		return 0;
-	}
-
-	return 1;
+	gen_clear(gen);
+	rb_free(gen->wavebuf);
+	gen->wavebuf = NULL;
+	return 0;
 }
 
 void _gen_pop_waves(Generator *gen) {
-	int cur_wave = -1;
-	if (gpioWaveTxBusy()) {
-		cur_wave = gpioWaveTxAt();
-		printf("wave tx busy on wave %d\n", cur_wave);
-	} else {
-		printf("wave tx NOT busy\n");
-	}
-	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != cur_wave) {
+	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != gen->current) {
 		int wave;
 		rb_pop(gen->wavebuf, &wave);
 		rawWaveInfo_t info = rawWaveInfo(wave);
-		gen->counter += (info.topCB - info.botCB) - 1;
-		printf("pop wave %d\n", wave);
+		gen->counter += (info.topCB - info.botCB);
+		printf("pop wave %d, %d\n", wave, (info.topCB - info.botCB));
 		gpioWaveDelete(wave);
 	}
 }
@@ -86,6 +74,7 @@ void _gen_push_wave(Generator *gen, int wave) {
 		printf("rb empty\n");
 		int n = gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT);
 		printf("tx send, ret: %d\n", n);
+		gen->current = wave;
 	}
 	rb_push(gen->wavebuf, &wave);
 }
@@ -101,26 +90,40 @@ int gen_run(Generator *gen, int (*get_wave_cb)(void*), void *user_data) {
 			}
 			_gen_push_wave(gen, wave);
 		}
-		
-		if (!rb_empty(gen->wavebuf)) {
-			_gen_pop_waves(gen);
-		} else {
-			break;
-		}
 
 		gpioDelay(GEN_DELAY);
+
+		if (gpioWaveTxBusy()) {
+			gen->current = gpioWaveTxAt();
+		} else if(gen->run) {
+			gen->current = -1;
+			gen->run = 0;
+		}
+
+		if (!rb_empty(gen->wavebuf)) {
+			_gen_pop_waves(gen);
+		}
 	}
 	gen->run = 0;
 
 	return 0;
 }
 
-int gen_stop(Generator *gen) {
-	gen->run = 0;
+int gen_position(Generator *gen) {
 	if (gpioWaveTxBusy()) {
-		_gen_pop_waves(gen);
-		gen->counter += gpioWaveTxCbPos();
-		gpioWaveTxStop();
+		return gpioWaveTxCbPos();
 	}
+	return 0;
+}
+
+int gen_stop(Generator *gen) {
+	gpioWaveTxStop();
+	gen->run = 0;
+	return 0;
+}
+
+int gen_clear(Generator *gen) {
+	gen->current = -1;
+	_gen_pop_waves(gen);
 	return 0;
 }

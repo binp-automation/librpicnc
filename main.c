@@ -7,29 +7,8 @@
 #include <pigpio.h>
 
 #include "generator.h"
+#include "axis.h"
 
-
-int gen_wave(void *data) {
-	int i;
-	gpioPulse_t pulses[3];
-
-	pulses[0].usDelay = (*(int*) data)*(1 + (rand() % 3));
-	pulses[0].gpioOn = 0;
-	pulses[0].gpioOff = 0;
-
-	// dummy last pulses (never executed)
-	for (i = 0; i < 2; ++i) {
-		pulses[1 + i].usDelay = 1;
-		pulses[1 + i].gpioOn = 0;
-		pulses[1 + i].gpioOff = 0;
-	}
-	
-	gpioWaveAddNew();
-
-	gpioWaveAddGeneric(sizeof(pulses)/sizeof(pulses[0]), pulses);
-	int wave = gpioWaveCreate();
-	return wave;
-}
 
 int main(int argc, char *argv[]) {
 	srand(time(NULL));
@@ -40,13 +19,17 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 	
+	Axis axis_y;
+	axis_init(&axis_y, 18, 17, 19, 16);
 	Generator gen;
-	gen_init(&gen);
+	gen_init(&gen, 0x10);
 	
-	int delay = 300000; // us
-	gen_run(&gen, gen_wave, &delay);
+	axis_scan(&axis_y, &gen);
 	
 	gen_free(&gen);
+	axis_free(&axis_y);
+
+	printf("length: %d\n", axis_y.length);
 	
 	printf("stop\n");
 
