@@ -1,9 +1,9 @@
 BUILD_DIR=build
 
-HEADERS=pigpio/pigpio.h ringbuffer.h generator.h axis.h
+HEADERS=pigpio/pigpio.h utility.h ringbuffer.h command.h generator.h axis.h device.h
 BIN=$(BUILD_DIR)/cnc
 
-CF=-Wall -Ipigpio
+CF=-g -Wall -Ipigpio
 LF=-lm -pthread -lpigpio -L$(BUILD_DIR)/pigpio/
 
 .PHONY: all clean dirs cnc pigpio

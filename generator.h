@@ -79,12 +79,12 @@ void _gen_push_wave(Generator *gen, int wave) {
 	rb_push(gen->wavebuf, &wave);
 }
 
-int gen_run(Generator *gen, int (*get_wave_cb)(void*), void *user_data) {
+int gen_run(Generator *gen, int (*get_wave)(void*), void *user_data) {
 	gen->run = 1;
 
 	while (gen->run) {
 		while (!rb_full(gen->wavebuf)) {
-			int wave = get_wave_cb(user_data);
+			int wave = get_wave(user_data);
 			if (wave < 0) {
 				break;
 			}

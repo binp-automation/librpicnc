@@ -2,11 +2,9 @@
 
 #include <stdlib.h>
 
-#define CMD_NONE 0x00
-#define CMD_WAIT 0x01
-#define CMD_MOVE 0x02
-
-#define MAX_AXES 8
+#define CMD_NONE       0x00
+#define CMD_WAIT       0x01
+#define CMD_MOVE       0x02
 
 typedef struct {
 	
@@ -18,15 +16,15 @@ typedef struct {
 
 typedef struct {
 	float speed;
-	int32_t steps[MAX_AXES];
+	int32_t steps;
 } CmdMove;
 
 typedef struct {
 	int type;
 	union {
-		CmdNone none;
-		CmdWait wait;
-		CmdMove move;
+		CmdNone      none;
+		CmdWait      wait;
+		CmdMove      move;
 	};
 } Cmd;
 
@@ -43,19 +41,10 @@ Cmd cmd_wait(uint32_t duration) {
 	return cmd;
 }
 
-Cmd cmd_move(float speed, int axes, const int32_t steps[]) {
-	int i;
+Cmd cmd_move(float speed, int32_t steps) {
 	Cmd cmd;
 	cmd.type = CMD_MOVE;
 	cmd.move.speed = speed;
-	
-	if (axes > MAX_AXES) { axes = MAX_AXES; }
-	for (i = 0; i < axes; ++i) {
-		cmd.move.steps[i] = steps[i];
-	}
-	for (i = axes; i < MAX_AXES; ++i) {
-		cmd.move.steps[i] = 0;
-	}
-	
+	cmd.move.steps = steps;
 	return cmd;
 }
