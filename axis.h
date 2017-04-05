@@ -12,6 +12,14 @@
 #include "command.h"
 #include "generator.h"
 
+typedef struct {
+
+} _AxisCmdWait;
+
+typedef struct {
+
+} _AxisCmdMove;
+
 typedef struct Axis {
 	// gpio pins
 	int pin_step;
@@ -26,8 +34,8 @@ typedef struct Axis {
 	
 	// current state
 	int idle;
-	gpioPulse_t pulse;
 	Cmd cmd;
+
 	int dir;
 	int dir_set;
 	int32_t steps;
@@ -44,7 +52,7 @@ int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	axis->position = 0;
 	axis->length = 0;
 	
-	axis->idle = 0;
+	axis->idle = 1;
 	axis->cmd = cmd_none();
 	axis->steps = 0;
 	axis->state = 0;
@@ -67,6 +75,10 @@ int axis_free(Axis *axis) {
 		return 0;
 	}
 	return 1;
+}
+
+void axis_eval_cmd(Axis *axis, Cmd cmd) {
+	axis->cmd = cmd;
 }
 
 int axis_set_direction(Axis *axis, int dir) {

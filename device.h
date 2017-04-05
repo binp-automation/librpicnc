@@ -117,6 +117,7 @@ int _dev_run_get_wave(void *userdata) {
 				axis_cookie.axis = nax;
 				_axis_next_pulse(&dev->axes[nax], _axis_get_cmd, (void*) &axis_cookie);
 			}
+			printf("pulse: on: %d, off: %d, delay: %d\n", pulses[i].gpioOn, pulses[i].gpioOff, pulses[i].usDelay);
 		}
 		pulse_count = i + 2;
 		printf("total: %d\n", total);
