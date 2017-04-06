@@ -14,11 +14,49 @@
 
 typedef struct {
 
-} _AxisCmdWait;
+} _AxisCmdNone;
 
 typedef struct {
 
+} _AxisCmdWait;
+
+typedef struct {
+	int stage;
+	int phase;
+	uint32_t delay;
+	uint32_t steps;
 } _AxisCmdMove;
+
+typedef struct {
+	int idle;
+	int done;
+	Cmd cmd;
+	uint32_t remain; // us
+	union {
+		_AxisCmdNone none;
+		_AxisCmdWait wait;
+		_AxisCmdMove move;
+	}
+} _AxisState;
+
+void _axis_state_init(_AxisState *st) {
+	st->idle = 1;
+	st->done = 1;
+	st->cmd = cmd_none();
+	st->remain = 0;
+}
+
+typedef struct {
+	uint32_t on;
+	uint32_t off;
+} PinAction;
+
+PinAction new_pin_action() {
+	PinAction pa;
+	pa.on = 0;
+	pa.off = 0;
+	return pa;
+}
 
 typedef struct Axis {
 	// gpio pins
@@ -33,14 +71,7 @@ typedef struct Axis {
 	int direction;
 	
 	// current state
-	int idle;
-	Cmd cmd;
-
-	int dir;
-	int dir_set;
-	int32_t steps;
-	int     state;
-	uint32_t remain;
+	_AxisState state;
 } Axis;
 
 int axis_init(Axis *axis, int step, int dir, int left, int right) {
@@ -52,11 +83,7 @@ int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	axis->position = 0;
 	axis->length = 0;
 	
-	axis->idle = 1;
-	axis->cmd = cmd_none();
-	axis->steps = 0;
-	axis->state = 0;
-	axis->remain = 0;
+	_axis_state_init(&axis->state);
 
 	gpioSetMode(axis->pin_step, PI_OUTPUT);
 	gpioSetMode(axis->pin_dir,  PI_OUTPUT);
@@ -77,28 +104,82 @@ int axis_free(Axis *axis) {
 	return 1;
 }
 
-void axis_eval_cmd(Axis *axis, Cmd cmd) {
-	axis->cmd = cmd;
-}
-
-int axis_set_direction(Axis *axis, int dir) {
-	if (dir == 0) {
-		if (!gpioRead(axis->pin_left)) {
-			gpioWrite(axis->pin_dir, 0);
-			axis->direction = 0;
-			return 0;
+void axis_set_cmd(Axis *axis, Cmd cmd) {
+	_AxisState *st = axis->state;
+	st->cmd = cmd;
+	st->idle = 0;
+	st->done = 0;
+	if (cmd.type == CMD_NONE) {
+		st->idle = 1;
+	} else if (cmd.type == CMD_WAIT) {
+		st->remain = cmd.wait.duration;
+		st->done = 1;
+	} else if (cmd.type == CMD_MOVE) {
+		st->remain = 0;
+		st->move.stage = 0;
+		st->move.delay = FREQ_TO_US(cmd.move.speed);
+		if (cmd.move.steps != 0) {
+			st->move.steps = cmd->steps > 0 ? cmd->steps : -cmd->steps;
+			st->move.phase = 0;
 		} else {
-			return -1;
+			st->done = 1;
 		}
 	} else {
-		if (!gpioRead(axis->pin_right)) {
-			gpioWrite(axis->pin_dir, 1);
-			axis->direction = 1;
-			return 0;
+		st->done = 1;
+	}
+}
+
+PinAction axis_eval_cmd(Axis *axis) {
+	_AxisState *st = axis->state;
+	PinAction pa = new_pin_action();
+	if (!st->done) {
+		if (st->cmd.type == CMD_NONE) {
+			st->done = 1;
+		} else if (st->cmd.type == CMD_WAIT) {
+			st->done = 1;
+		} else if (st->cmd.type == CMD_MOVE) {
+			if (st->move.stage == 0) { // set direction
+				if (st->cmd.move.steps > 0) {
+					pa.on = 1 << axis->pin_dir;
+					axis->direction = 1;
+				} else {
+					pa.off = 1 << axis->pin_dir;
+					axis->direction = 0;
+				}
+				st->remain = 0;
+				st->move.stage += 2;
+			} else if (st->move.stage == 1) { // accelerate
+				// nothing yet
+			} else if (st->move.stage == 2) { // move
+				if (st->move.steps > 0) {
+					if (st->move.phase == 0) {
+						pa.on = 1 << axis->pin_step;
+						st->remain = st->move.delay/2;
+						st->move.phase = 1;
+					} else {
+						pa.off = 1 << axis->pin_step;
+						st->remain = (st->move.delay - 1)/2 + 1;
+						st->move.phase = 0;
+					}
+				} else {
+					st->done = 1;
+				}
+			} else if (st->move.stage == 3) { // decelerate
+				// nothing yet
+			}
 		} else {
-			return -1;
+			st->done = 1;
 		}
 	}
+	return pa;
+}
+
+PinAction axis_step(Axis *axis, Cmd (*get_cmd)(void*), void *userdata) {
+	_AxisState *st = &axis->state;
+	if (axis->state.idle || axis->state.done) {
+		axis_set_cmd(axis, get_cmd(userdata));
+	}
+	return axis_eval_cmd(axis);
 }
 
 typedef struct {
@@ -130,12 +211,11 @@ int _axis_get_wave(void *userdata) {
 	int pulse_count = cookie->pulse_count;
 
 	int i;
-	int mask = (1<<axis->pin_step);
-	int delay = 1000;
 	for (i = 0; i < pulse_count - 2; ++i) {
-		pulses[i].usDelay = delay;
-		pulses[i].gpioOn =  mask*((i+1)%2);
-		pulses[i].gpioOff = mask*(i%2);
+		PinAction pa = axis_eval_cmd(axis);
+		pulses[i].usDelay = axis->state.remain;
+		pulses[i].gpioOn =  pa.on;
+		pulses[i].gpioOff = pa.off;
 	}
 
 	// dummy last pulses (never executed)
@@ -155,7 +235,7 @@ int _axis_get_wave(void *userdata) {
 	return wave;
 }
 
-int axis_scan(Axis *axis, Generator *gen) {
+int axis_scan(Axis *axis, Generator *gen, float speed) {
 	_AxisScanCookie cookie;
 	cookie.axis = axis;
 	cookie.gen = gen;
@@ -165,14 +245,16 @@ int axis_scan(Axis *axis, Generator *gen) {
 	gpioSetAlertFuncEx(axis->pin_left, _axis_scan_alert, (void*) &cookie);
 	gpioSetAlertFuncEx(axis->pin_right, _axis_scan_alert, (void*) &cookie);
 
-	if(axis_set_direction(axis, 1) == 0) {
+	if (!gpioRead(axis->pin_right)) {
+		axis_set_cmd(axis, cmd_move(axis, cmd_move(speed, 0x7fffffff)));
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		gen_clear(gen);
 	}
 
 	cookie.counter = 0;
-	if(axis_set_direction(axis, 0) == 0) {
+	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
+		axis_set_cmd(axis, cmd_move(axis, cmd_move(speed, -0x80000000)));
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		axis->length = gen->counter + cookie.counter;
 		gen_clear(gen);
@@ -184,71 +266,6 @@ int axis_scan(Axis *axis, Generator *gen) {
 	gpioSetAlertFuncEx(axis->pin_right, NULL, NULL);
 
 	free(cookie.pulses);
-
-	return 0;
-}
-
-int _axis_next_pulse(Axis *axis, Cmd (*get_cmd)(void*), void *userdata) {
-	if (axis->cmd.type == CMD_NONE) {
-		axis->cmd = get_cmd(userdata);
-		axis->idle = 0;
-		if (axis->cmd.type == CMD_NONE) {
-			axis->idle = 1;
-		} else if (axis->cmd.type == CMD_WAIT) {
-			// nothing
-		} else if (axis->cmd.type == CMD_MOVE) {
-			CmdMove cmd = axis->cmd.move;
-			if (cmd.steps == 0) {
-				axis->cmd = cmd_none();
-			} else {
-				axis->dir = cmd.steps > 0 ? 1 : 0;
-				axis->steps = cmd.steps > 0 ? cmd.steps : -cmd.steps;
-				axis->dir_set = 0;
-				axis->direction = axis->dir;
-			}
-		}
-	}
-
-	// get next pulse
-	if (axis->cmd.type == CMD_NONE) {
-		// nothing
-	} else if (axis->cmd.type == CMD_WAIT) {
-		axis->pulse.gpioOn = 0;
-		axis->pulse.gpioOff = 0;
-		axis->remain = axis->cmd.wait.duration;
-		axis->cmd = cmd_none();
-	} else if (axis->cmd.type == CMD_MOVE) {
-		if (!axis->dir_set) {
-			axis->remain = 0;
-			if (axis->dir == 0) {
-				axis->pulse.gpioOn = 0;
-				axis->pulse.gpioOff = 1<<axis->pin_dir;
-			} else {
-				axis->pulse.gpioOn = 1<<axis->pin_dir;
-				axis->pulse.gpioOff = 0;
-			}
-			axis->dir_set = 1;
-		} else {
-			if (axis->steps > 0) {
-				int delay = FREQ_TO_US(axis->cmd.move.speed);
-				if (axis->state == 0) {
-					axis->state = 1;
-					axis->remain = (delay - 1)/2 + 1;
-					axis->pulse.gpioOn = 1<<axis->pin_step;
-					axis->pulse.gpioOff = 0;
-				} else {
-					axis->state = 0;
-					axis->remain = delay/2;
-					axis->pulse.gpioOn = 0;
-					axis->pulse.gpioOff = 1<<axis->pin_step;
-					axis->steps -= 1;
-				}
-			} 
-			if (axis->steps == 0) {
-				axis->cmd = cmd_none();
-			}
-		}
-	}
 
 	return 0;
 }

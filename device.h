@@ -83,9 +83,9 @@ int _dev_run_get_wave(void *userdata) {
 
 	int i, ax;
 	for (ax = 0; ax < dev->axis_count; ++ax) {
-		if (dev->axes[ax].idle) {
+		if (dev->axes[ax].state.idle) {
 			axis_cookie.axis = ax;
-			_axis_next_pulse(&dev->axes[ax], _axis_get_cmd, (void*) &axis_cookie);
+			axis_set_cmd(&dev->axes[ax], _axis_get_cmd, (void*) &axis_cookie);
 		}
 	}
 
@@ -94,28 +94,29 @@ int _dev_run_get_wave(void *userdata) {
 		for (i = 0; i < pulse_count - 2; ++i) {
 			int nax = -1, remain = 0;
 			for (ax = 0; ax < dev->axis_count; ++ax) {
-				if (!dev->axes[ax].idle && (nax < 0 || dev->axes[ax].remain < remain)) {
+				if (!dev->axes[ax].state.idle && (nax < 0 || dev->axes[ax].state.remain < remain)) {
 					nax = ax;
-					remain = dev->axes[ax].remain;
+					remain = dev->axes[ax].state.remain;
 				}
 			}
 			if (nax < 0) {
 				break;
 			}
-			printf("nax: %d, remain: %d, steps: %d\n", nax, remain, dev->axes[nax].steps);
+			printf("nax: %d, remain: %d, steps: %d\n", nax, remain, dev->axes[nax].state.move.steps);
 			if (remain > 0) {
 				total += remain;
 				for (ax = 0; ax < dev->axis_count; ++ax) {
-					dev->axes[ax].remain -= remain;
+					dev->axes[ax].state.remain -= remain;
 				}
 				pulses[i].usDelay = remain;
 				pulses[i].gpioOn = 0;
 				pulses[i].gpioOff = 0;
 			} else {
-				pulses[i] = dev->axes[nax].pulse;
-				pulses[i].usDelay = 0;
 				axis_cookie.axis = nax;
-				_axis_next_pulse(&dev->axes[nax], _axis_get_cmd, (void*) &axis_cookie);
+				PinAction pa = axis_step(&dev->axes[nax], _axis_get_cmd, (void*) &axis_cookie);
+				pulses[i].gpioOn = pa.on;
+				pulses[i].gpioOff = pa.off;
+				pulses[i].usDelay = 0;
 			}
 			printf("pulse: on: %d, off: %d, delay: %d\n", pulses[i].gpioOn, pulses[i].gpioOff, pulses[i].usDelay);
 		}
