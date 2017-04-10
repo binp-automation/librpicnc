@@ -2,13 +2,13 @@
 
 raw = []
 
-with open("Still Alive Abs.txt") as file:
+with open("still_alive_abs.txt") as file:
 	for line in file:
 		data = line.split()
 		if len(data) >= 5 and (data[1] == "On" or data[1] == "Off"):
 			raw.append(data)
 
-seq = []
+notes = []
 
 class Note:
 	def __init__(self, chan, pos, dur, num, vol):
@@ -21,7 +21,7 @@ class Note:
 	def __str__(self):
 		return "{ chan: %d, pos: %d, dur: %d, num: %d, vol: %d }" % (self.chan, self.pos, self.dur, self.num, self.vol)
 
-def parse(b, e):
+def parseNote(b, e):
 	if b[1] != "On" or e[1] != "Off":
 		print("%s != On or %s != Off" % (b[1], e[1]))
 		return None
@@ -39,16 +39,51 @@ def parse(b, e):
 	return Note(chan, pos, dur, num, vol)
 
 for i in range(len(raw)//2):
-	note = parse(raw[2*i], raw[2*i + 1])
+	note = parseNote(raw[2*i], raw[2*i + 1])
 	if note != None:
-		seq.append(note)
+		notes.append(note)
 		# print(note)
 
 chan=1
-print("chan1[][3] = {")
-for note in seq:
+prefix = "static const int chan%d[] =";
+postfix = "0, 0, 0"
+print(prefix % chan)
+print("{")
+for note in notes:
 	if note.chan != chan:
 		chan = note.chan
-		print("};\nchan%d[][3] = {" % chan)
-	print("{%d, %d, %d}," % (note.pos, note.dur, note.num))
+		print(postfix)
+		print("};")
+		print(prefix % chan)
+		print("{")
+	print("%d, %d, %d," % (note.pos, note.dur, note.num))
+print(postfix)
 print("};")
+
+"""
+lyrics = []
+
+class Lyric:
+	def __init__(self, pos, text):
+		self.pos = pos;
+		self.text = text;
+
+	def __str__(self):
+		return "{ pos: %d, text: %d }" % (self.pos, self.text)
+
+with open("still_alive_abs.txt") as file:
+	for line in file:
+		words = line.split()
+		if len(words) >= 4 and words[1] == "Meta" and words[2] == "Lyric":
+			text = line.split("\"")[1];
+			lyrics.append(Lyric(int(words[0]), text));
+
+prefix = "static const char *lyrics[] =";
+postfix = "NULL"
+print(prefix)
+print("{")
+for lyric in lyrics:
+	print("(const char *) %d, \"%s\"," % (lyric.pos, lyric.text))
+print(postfix)
+print("};")
+"""

@@ -66,7 +66,7 @@ typedef struct {
 Cmd _axis_get_cmd(void *userdata) {
 	_AxisGetCmdCookie *cookie = (_AxisGetCmdCookie*) userdata;
 	Cmd cmd = cookie->get_cmd(cookie->axis, cookie->userdata);
-	printf("axis %d cmd %d\n", cookie->axis, cmd.type);
+	// printf("axis %d cmd %d\n", cookie->axis, cmd.type);
 	return cmd;
 }
 
@@ -121,8 +121,8 @@ int _dev_run_get_wave(void *userdata) {
 			// printf("pulse: on: %d, off: %d, delay: %d\n", pulses[i].gpioOn, pulses[i].gpioOff, pulses[i].usDelay);
 		}
 		pulse_count = i + 2;
-		printf("total: %d\n", total);
-		printf("pulses: %d\n", pulse_count);
+		// printf("total: %d\n", total);
+		// printf("pulses: %d\n", pulse_count);
 
 		// dummy last pulses (never executed)
 		for (i = pulse_count - 2; i < pulse_count; ++i) {
@@ -150,7 +150,7 @@ int _dev_run_get_wave(void *userdata) {
 		cookie->reuse_pulses = 0;
 	}
 
-	printf("wid: %d\n", wave);
+	// printf("wid: %d\n", wave);
 
 	return wave;
 }

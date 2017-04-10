@@ -50,3 +50,19 @@ Cmd cmd_move(int32_t steps, float speed, float accel) {
 	cmd.move.accel = accel;
 	return cmd;
 }
+
+void print_cmd(Cmd cmd) {
+	if (cmd.type == CMD_NONE) {
+		printf("type: NONE\n");
+	} else if (cmd.type == CMD_WAIT) {
+		printf("type: WAIT\n");
+		printf("duration: %d us\n", cmd.wait.duration);
+	} else if (cmd.type == CMD_MOVE) {
+		printf("type: MOVE\n");
+		printf("steps: %d\n", cmd.move.steps);
+		printf("speed: %f Hz\n", cmd.move.speed);
+		printf("accel: %f Hz^2\n", cmd.move.accel);
+	} else {
+		printf("type: unknown\n");
+	}
+}

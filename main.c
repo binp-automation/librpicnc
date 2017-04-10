@@ -11,38 +11,104 @@
 #include "axis.h"
 #include "device.h"
 
-#define SPEED 4000
+#include "midi/still_alive.h"
+
+#define SPEED 8000
 #define ACCEL 20000
 
 typedef struct {
-	int time;
+	int64_t time;
 	int idx;
 	int pos;
 	int len;
+	int dir;
 } Chan;
 
 typedef struct {
 	Chan chan[2];
 } Cookie;
 
-Cmd center_cmd(int ax, void *userdata) {
+#define TICKS_TO_US(ticks) \
+	((1000000*((int64_t) ticks))/512)
+
+#define NOTE_TO_FREQ(note) \
+	(pow(2, ((note) - 57)/12.0)*440.0)
+
+#define BORDER 0.2
+
+Cmd cnt_cmd(int ax, void *userdata) {
 	Cookie *cookie = (Cookie*) userdata;
 	Cmd cmd = cmd_none();
-	if (ax == 0) {
-		if (cookie->chan[0].idx < 0) {
-			int center = cookie->chan[0].len/2;
+	if (ax == 0 || ax == 1) {
+		Chan *c = &cookie->chan[ax];
+		if (c->idx < 0) {
+			int center = c->len/2;
 			cmd = cmd_move(center, SPEED, ACCEL);
-			cookie->chan[0].pos = center;
-			cookie->chan[0].idx = 0;
-		}
-	} else {
-		if (cookie->chan[1].idx < 0) {
-			int center = cookie->chan[1].len/2;
-			cmd = cmd_move(center, SPEED, ACCEL);
-			cookie->chan[1].pos = center;
-			cookie->chan[1].idx = 0;
+			c->pos = center;
+			c->idx = 0;
 		}
 	}
+	printf("axis %d:\n", ax);
+	print_cmd(cmd);
+	return cmd;
+}
+
+Cmd get_cmd(int ax, void *userdata) {
+	Cookie *cookie = (Cookie*) userdata;
+	Cmd cmd = cmd_none();
+	if (ax == 0 || ax == 1) {
+		Chan *c = &cookie->chan[ax];
+		const int *chan = ((ax == 0) ? chan1 : chan2);
+		int i = c->idx;
+		if (chan[3*i + 0] != 0 || chan[3*i + 1] != 0 || chan[3*i + 2] != 0) {
+			printf("axis %d:\n", ax);
+			const int *note = chan + 3*i;
+			printf("c->time: %lld\n", c->time);
+			int64_t time = TICKS_TO_US(note[0]);
+			printf("time: %lld\n", time);
+			if (c->time < time) {
+				int delay = time - c->time;
+				cmd = cmd_wait(delay);
+				c->time += delay;
+				printf("delay: %d\n", delay);
+			} else {
+				float freq = NOTE_TO_FREQ(note[2]);
+				int delay = TICKS_TO_US(note[1]) - (c->time - time);
+				int steps = floor(1e-6*delay*freq);
+
+				int cmd_delay = axis_count_cmd_delay(cmd_move(steps, freq, ACCEL));
+				if (cmd_delay > delay) {
+					steps -= ceil(1e-6*(cmd_delay - delay)*freq) + 1;
+					cmd_delay = axis_count_cmd_delay(cmd_move(steps, freq, ACCEL));
+				}
+				if (cmd_delay > delay) {
+					fprintf(stderr, "cmd_delay(%d) > delay(%d)\n", cmd_delay, delay);
+				}
+				delay = cmd_delay;
+
+				if (c->dir == 0) {
+					if (c->pos <= c->len*BORDER) {
+						c->dir = 1;
+					}
+				} else {
+					if (c->pos >= c->len*(1.0 - BORDER)) {
+						c->dir = 0;
+					}
+				}
+				if (c->dir == 0) {
+					steps = -steps;
+				}
+
+				cmd = cmd_move(steps, freq, ACCEL);
+
+				c->time += delay;
+				c->idx += 1;
+				c->pos += steps;
+				printf("delay: %d\n", delay);
+			}
+		}
+	}
+	print_cmd(cmd);
 	return cmd;
 }
 
@@ -60,6 +126,7 @@ int main(int argc, char *argv[]) {
 		cookie.chan[i].idx = -1;
 		cookie.chan[i].pos = 0;
 		cookie.chan[i].len = 0;
+		cookie.chan[i].dir = 1;
 	}
 	
 	Generator gen;
@@ -80,10 +147,11 @@ int main(int argc, char *argv[]) {
 	cookie.chan[0].len = axis_x->length;
 	cookie.chan[1].len = axis_y->length;
 
-	dev_run(&dev, &gen, center_cmd, (void*) &cookie);
+	dev_run(&dev, &gen, cnt_cmd, (void*) &cookie);
 	dev_clear(&dev);
 
-	// dev_run(&dev, &gen, get_cmd, (void*) &cookie);
+	dev_run(&dev, &gen, get_cmd, (void*) &cookie);
+	dev_clear(&dev);
 
 	axis_free(axis_x);
 	axis_free(axis_y);
