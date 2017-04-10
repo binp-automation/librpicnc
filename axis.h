@@ -8,150 +8,79 @@
 
 #include <pigpio.h>
 
-#define MODE_NONE 0x00
-#define MODE_SCAN 0x11
-#define MODE_MOVE 0x21
+#include "utility.h"
+#include "command.h"
+#include "generator.h"
 
-#define STAGE_NONE 0x00 
-#define STAGE_SCAN_LR 0x11
-#define STAGE_SCAN_RL 0x12
-#define STAGE_MOVE_EN 0x21
-#define STAGE_MOVE_BR 0x22
+typedef struct {
 
-#define FREQ_TO_US(freq) \
-	((uint32_t) (1e6/(freq)))
+} _AxisCmdNone;
+
+typedef struct {
+
+} _AxisCmdWait;
+
+
+#define MAX_DELAY 1000000 // us
+#define POST_DELAY 1000 // us
+
+typedef struct {
+	int stage;
+	int phase;
+	float speed;
+	uint32_t steps;
+	uint32_t ramp;
+	uint32_t ramp_steps;
+} _AxisCmdMove;
+
+typedef struct {
+	int idle;
+	int done;
+	Cmd cmd;
+	uint32_t remain; // us
+	union {
+		_AxisCmdNone none;
+		_AxisCmdWait wait;
+		_AxisCmdMove move;
+	};
+} _AxisState;
+
+void _axis_state_init(_AxisState *st) {
+	st->idle = 1;
+	st->done = 1;
+	st->cmd = cmd_none();
+	st->remain = 0;
+}
+
+typedef struct {
+	uint32_t on;
+	uint32_t off;
+} PinAction;
+
+PinAction new_pin_action() {
+	PinAction pa;
+	pa.on = 0;
+	pa.off = 0;
+	return pa;
+}
 
 typedef struct Axis {
+	// gpio pins
 	int pin_step;
 	int pin_dir;
 	int pin_left;
 	int pin_right;
 	
+	// location
 	uint32_t length;
 	int32_t position;
+	int direction;
 	
-	float accel;
-	
-	int _mode;
-	int _stage;
-	
-	uint32_t _last_tick;
-	uint32_t _tick_count;
+	// current state
+	_AxisState state;
 } Axis;
 
-void _stop_all() {
-	gpioWaveTxStop();
-	gpioWaveClear();
-}
-
-int _wave_gen_step(int pin, float freq) {
-	int delay = FREQ_TO_US(freq);
-	
-	gpioPulse_t pulses[2];
-	pulses[0].usDelay = delay/2;
-	pulses[0].gpioOn = 1<<pin;
-	pulses[0].gpioOff = 0;
-	pulses[1].usDelay = (delay - 1)/2 + 1;
-	pulses[1].gpioOn = 0;
-	pulses[1].gpioOff = 1<<pin;
-	
-	gpioWaveAddNew();
-
-	gpioWaveAddGeneric(2, pulses);
-	return gpioWaveCreate();
-}
-
-int _wave_gen_ramp(int pin, float begin_freq, float end_freq, float accel) {
-	int i;
-	int steps = fabs(end_freq - begin_freq)*accel;
-	
-	gpioPulse_t *pulses = (gpioPulse_t *) malloc(sizeof(gpioPulse_t)*2*steps);
-	
-	for (i = 0; i < 2*steps; ++i) {
-		int delay = FREQ_TO_US(begin_freq + (end_freq - begin_freq)*(0.5*i + 0.25)/steps);
-		if (i % 2 == 0) {
-			pulses[i].usDelay = delay/2;
-			pulses[i].gpioOn = 1<<pin;
-			pulses[i].gpioOff = 0;
-		} else {
-			pulses[i].usDelay = (delay - 1)/2 + 1;
-			pulses[i].gpioOn = 0;
-			pulses[i].gpioOff = 1<<pin;
-		}
-	}
-	
-	gpioWaveAddNew();
-
-	gpioWaveAddGeneric(2*steps, pulses);
-	int wave = gpioWaveCreate();
-	
-	free(pulses);
-	
-	return wave;
-}
-
-int _set_dir_safe(Axis *axis, int dir) {
-	if (dir == 0) {
-		if (!gpioRead(axis->pin_left)) {
-			gpioWrite(axis->pin_dir, 0);
-			return 0;
-		} else {
-			return -1;
-		}
-	} else {
-		if (!gpioRead(axis->pin_right)) {
-			gpioWrite(axis->pin_dir, 1);
-			return 0;
-		} else {
-			return -1;
-		}
-	}
-}
-
-int _wave_wait() {
-	while (gpioWaveTxBusy()) {
-		gpioDelay(10000);
-	}
-	return 0;
-}
-
-void _axis_alert_cb(int gpio, int level, uint32_t tick, void *userdata) {
-	Axis *axis = (Axis*) userdata;
-	if (axis != NULL) {
-		if(axis->pin_left == gpio && level) {
-			printf("left\n");
-			gpioWaveTxStop();
-		} else if(axis->pin_right == gpio && level) {
-			printf("right\n");
-			gpioWaveTxStop();
-		}
-		if (axis->_mode == MODE_SCAN) {
-			if(axis->pin_left == gpio && level) {
-				if(axis->_stage == STAGE_SCAN_RL) {
-					axis->_tick_count = tick - axis->_last_tick;
-				}
-			} else if(axis->pin_right == gpio && level) {
-				if(axis->_stage == STAGE_SCAN_LR) {
-					axis->_tick_count = tick - axis->_last_tick;
-				}
-			}
-		} else if (axis->_mode == MODE_MOVE) {
-			if(axis->pin_left == gpio && level) {
-				axis->_stage = STAGE_MOVE_BR;
-				axis->_tick_count = tick - axis->_last_tick;
-			} else if(axis->pin_right == gpio && level) {
-				axis->_stage = STAGE_MOVE_BR;
-				axis->_tick_count = tick - axis->_last_tick;
-			}
-		} else {
-			_stop_all();
-		}
-	} else {
-		_stop_all();
-	}
-}
-
-int axis_init(Axis *axis, int step, int dir, int left, int right, float accel) {
+int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	axis->pin_step  = step;
 	axis->pin_dir   = dir;
 	axis->pin_left  = left;
@@ -160,126 +89,226 @@ int axis_init(Axis *axis, int step, int dir, int left, int right, float accel) {
 	axis->position = 0;
 	axis->length = 0;
 	
-	axis->accel = accel;
-	
-	axis->_mode = MODE_NONE;
-	axis->_stage = STAGE_NONE;
+	_axis_state_init(&axis->state);
 
 	gpioSetMode(axis->pin_step, PI_OUTPUT);
 	gpioSetMode(axis->pin_dir,  PI_OUTPUT);
 	gpioSetMode(axis->pin_left,  PI_INPUT);
 	gpioSetMode(axis->pin_right, PI_INPUT);
 	
-	gpioSetAlertFuncEx(axis->pin_left, _axis_alert_cb, (void*) axis);
-	gpioSetAlertFuncEx(axis->pin_right, _axis_alert_cb, (void*) axis);
-	
 	return 0;
 }
 
-uint32_t _axis_move_rel(Axis *axis, float freq, uint32_t steps, int dir) {
-	int i, steps_done = 0;
-	
-	axis->_mode = MODE_MOVE;
-	axis->_stage = STAGE_MOVE_EN;
-	
-	int waves[3];
-	waves[0] = _wave_gen_ramp(axis->pin_step, 0, freq, axis->accel);
-	waves[1] = _wave_gen_step(axis->pin_step, freq);
-	waves[2] = _wave_gen_ramp(axis->pin_step, freq, 0, axis->accel);
-	for (i = 0; i < sizeof(waves)/sizeof(waves[0]); ++i) {
-		if (waves[i] < 0) {
-			fprintf(stderr, "error create waves\n");
-			goto err_waves;
+int axis_free(Axis *axis) {
+	if (axis) {
+		gpioSetMode(axis->pin_step, PI_INPUT);
+		gpioSetMode(axis->pin_dir,  PI_INPUT);
+		gpioSetMode(axis->pin_left,  PI_INPUT);
+		gpioSetMode(axis->pin_right, PI_INPUT);
+		return 0;
+	}
+	return 1;
+}
+
+void axis_set_cmd(Axis *axis, Cmd cmd) {
+	_AxisState *st = &axis->state;
+	st->cmd = cmd;
+	st->idle = 0;
+	st->done = 0;
+	if (cmd.type == CMD_NONE) {
+		st->idle = 1;
+	} else if (cmd.type == CMD_WAIT) {
+		st->remain = cmd.wait.duration;
+		st->done = 1;
+	} else if (cmd.type == CMD_MOVE) {
+		st->remain = 0;
+		st->move.stage = 0;
+		if (cmd.move.steps != 0) {
+			st->move.steps = cmd.move.steps > 0 ? cmd.move.steps : -cmd.move.steps;
+			st->move.phase = 0;
+			st->move.speed = 0.0;
+			st->move.ramp = floor((st->cmd.move.speed*st->cmd.move.speed)/(2*st->cmd.move.accel));
+			if (2*st->move.ramp > st->move.steps) {
+				st->move.ramp = (st->move.steps - 1)/2 + 1;
+			}
+			st->move.ramp_steps = 0;
+		} else {
+			st->done = 1;
 		}
+	} else {
+		st->done = 1;
+	}
+}
+
+PinAction axis_eval_cmd(Axis *axis) {
+	_AxisState *st = &axis->state;
+	PinAction pa = new_pin_action();
+	if (!st->done) {
+		if (st->cmd.type == CMD_NONE) {
+			st->done = 1;
+		} else if (st->cmd.type == CMD_WAIT) {
+			st->done = 1;
+		} else if (st->cmd.type == CMD_MOVE) {
+			if (st->move.stage == 0) { // set direction
+				if (st->cmd.move.steps > 0) {
+					pa.on = 1 << axis->pin_dir;
+					axis->direction = 1;
+				} else {
+					pa.off = 1 << axis->pin_dir;
+					axis->direction = 0;
+				}
+				st->remain = 0;
+				st->move.stage += 1;
+			} else {
+				uint32_t delay = MAX_DELAY;
+				if (st->move.stage == 1) { // accelerate
+					float speed = sqrt(2*st->cmd.move.accel*(st->move.ramp_steps + 0.5));
+					delay = FREQ_TO_US(speed);
+					if (delay > MAX_DELAY) {
+						delay = MAX_DELAY;
+					}
+					st->move.ramp_steps += 1;
+					if (st->move.ramp_steps > st->move.ramp) {
+						if (st->move.steps < st->move.ramp) {
+							st->move.stage += 2;
+						} else {
+							st->move.stage += 1;
+						}
+					}
+				} else if (st->move.stage == 2) { // move
+					delay = FREQ_TO_US(st->cmd.move.speed);
+					if (st->move.ramp >= st->move.steps) {
+						st->move.stage += 1;
+					}
+				} else if (st->move.stage == 3) { // decelerate
+					float speed = sqrt(2*st->cmd.move.accel*(st->move.steps - 0.5));
+					delay = FREQ_TO_US(speed);
+					if (delay > MAX_DELAY) {
+						delay = MAX_DELAY;
+					}
+				} else if (st->move.stage == 4) {
+					st->remain = POST_DELAY;
+					st->done = 1;
+				}
+				if (st->move.steps > 0) {
+					if (st->move.phase == 0) {
+						pa.on = 1 << axis->pin_step;
+						st->remain = delay/2;
+						st->move.phase = 1;
+					} else {
+						pa.off = 1 << axis->pin_step;
+						st->remain = (delay - 1)/2 + 1;
+						st->move.phase = 0;
+						st->move.steps -= 1;
+					}
+				}
+				if (st->move.steps <= 0) {
+					st->move.stage = 4;
+				}
+			}
+		} else {
+			st->done = 1;
+		}
+	}
+	return pa;
+}
+
+PinAction axis_step(Axis *axis, Cmd (*get_cmd)(void*), void *userdata) {
+	// _AxisState *st = &axis->state;
+	if (axis->state.idle || axis->state.done) {
+		axis_set_cmd(axis, get_cmd(userdata));
+	}
+	return axis_eval_cmd(axis);
+}
+
+typedef struct {
+	Axis *axis;
+	Generator *gen;
+	int counter;
+	gpioPulse_t *pulses;
+	int pulse_count;
+} _AxisScanCookie;
+
+void _axis_scan_alert(int gpio, int level, uint32_t tick, void *userdata) {
+	_AxisScanCookie *cookie = (_AxisScanCookie*) userdata;
+	Axis *axis = cookie->axis;
+	Generator *gen = cookie->gen;
+	if(axis->pin_left == gpio && level) {
+		printf("left\n");
+		cookie->counter = gen_position(gen);
+		gen_stop(gen);
+	} else if(axis->pin_right == gpio && level) {
+		printf("right\n");
+		gen_stop(gen);
+	}
+}
+
+int _axis_get_wave(void *userdata) {
+	_AxisScanCookie *cookie = (_AxisScanCookie*) userdata;
+	Axis *axis = cookie->axis;
+	gpioPulse_t *pulses = cookie->pulses;
+	int pulse_count = cookie->pulse_count;
+
+	int i;
+	for (i = 0; i < pulse_count - 2; ++i) {
+		PinAction pa = axis_eval_cmd(axis);
+		pulses[i].usDelay = axis->state.remain;
+		pulses[i].gpioOn =  pa.on;
+		pulses[i].gpioOff = pa.off;
 	}
 
-	char comp[4] = {
-		0xff & (steps >>  0), 0xff & (steps >>  8), 
-		0xff & (steps >> 16), 0xff & (steps >> 24)
-	};
-	char chain[] = {
-		waves[0],
-		255, 0,
-			255, 0,
-				waves[1],
-			255, 1, 255, 255,
-		255, 1, comp[2], comp[3],
-		255, 0,
-			waves[1],
-		255, 1, comp[0], comp[1],
-		waves[2]
-	};
-	
-	if (_set_dir_safe(axis, dir) != 0) {
-		goto err_chain;
+	// dummy last pulses (never executed)
+	for (i = pulse_count - 2; i < pulse_count; ++i) {
+		pulses[i].usDelay = 1;
+		pulses[i].gpioOn = 0;
+		pulses[i].gpioOff = 0;
 	}
 	
-	axis->_last_tick = gpioTick();
-	int cs = gpioWaveChain(chain, sizeof(chain));
-	if (cs != 0) {
-		fprintf(stderr, "error transmit chain: %d", cs);
-		goto err_chain;
+	gpioWaveAddNew();
+
+	gpioWaveAddGeneric(pulse_count, pulses);
+	int wave = gpioWaveCreate();
+
+	printf("wid: %d\n", wave);
+
+	return wave;
+}
+
+int axis_scan(Axis *axis, Generator *gen, float speed, float accel) {
+	int pulse_count = 0x100;
+
+	_AxisScanCookie cookie;
+	cookie.axis = axis;
+	cookie.gen = gen;
+	cookie.pulse_count = pulse_count;
+	cookie.pulses = (gpioPulse_t*) malloc(sizeof(gpioPulse_t)*cookie.pulse_count);
+
+	gpioSetAlertFuncEx(axis->pin_left, _axis_scan_alert, (void*) &cookie);
+	gpioSetAlertFuncEx(axis->pin_right, _axis_scan_alert, (void*) &cookie);
+
+	if (!gpioRead(axis->pin_right)) {
+		axis_set_cmd(axis, cmd_move(0x7fffffff, speed, accel));
+		gen_run(gen, _axis_get_wave, (void*) &cookie);
+		gen_clear(gen);
+		_axis_state_init(&axis->state);
 	}
-	_wave_wait();
-	goto ok;
-	
-	err_chain:
-	err_waves:
-	for (i = 0; i < sizeof(waves)/sizeof(waves[0]); ++i) {
-		if (waves[i] >= 0) {
-			gpioWaveDelete(waves[i]);
-		}
+
+	cookie.counter = 0;
+	if(!gpioRead(axis->pin_left)) {
+		gen->counter = 0;
+		axis_set_cmd(axis, cmd_move(-0x80000000, speed, accel));
+		gen_run(gen, _axis_get_wave, (void*) &cookie);
+		axis->length = ((gen->counter/pulse_count)*(pulse_count - 2) + cookie.counter)/4;
+		gen_clear(gen);
+		_axis_state_init(&axis->state);
 	}
+
+	printf("counter: %d\n", cookie.counter);
+
+	gpioSetAlertFuncEx(axis->pin_left, NULL, NULL);
+	gpioSetAlertFuncEx(axis->pin_right, NULL, NULL);
+
+	free(cookie.pulses);
+
 	return 0;
-	
-	ok:
-	steps_done = steps;
-	if (axis->_stage == STAGE_MOVE_BR) {
-		steps_done = axis->_tick_count/FREQ_TO_US(freq);
-	}
-	
-	if(dir) {
-		axis->position += steps_done;
-	} else {
-		axis->position -= steps_done;
-	}
-	
-	return steps_done;
-}
-
-int32_t axis_move_rel(Axis *axis, float freq, int32_t steps) {
-	if (steps > 0) {
-		return _axis_move_rel(axis, freq, steps, 1);
-	} else {
-		return -_axis_move_rel(axis, freq, -steps, 0);
-	}
-}
-
-int32_t axis_move_abs(Axis *axis, float freq, int32_t pos) {
-	return axis_move_rel(axis, freq, pos - axis->position);
-}
-
-uint32_t axis_scan(Axis *axis, float freq) {
-	const uint32_t max_steps = 0xFFFFFFFF;
-	
-	axis->_mode = MODE_SCAN;
-	
-	axis->_stage = STAGE_SCAN_RL;
-	_axis_move_rel(axis, freq, max_steps, 0);
-	
-	axis->_stage = STAGE_SCAN_LR;
-	uint32_t lr = _axis_move_rel(axis, freq, max_steps, 1);
-	printf("lr steps: %d\n", lr);
-	
-	axis->_stage = STAGE_SCAN_RL;
-	uint32_t rl = _axis_move_rel(axis, freq, max_steps, 0);
-	printf("rl steps: %d\n", rl);
-	
-	// axis->_mode = MODE_NONE;
-	
-	uint32_t min_len = rl < lr ? rl : lr;
-	axis->length = min_len;
-	axis->position = 0;
-	
-	return min_len;
 }
