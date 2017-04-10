@@ -85,7 +85,7 @@ int _dev_run_get_wave(void *userdata) {
 	for (ax = 0; ax < dev->axis_count; ++ax) {
 		if (dev->axes[ax].state.idle) {
 			axis_cookie.axis = ax;
-			axis_set_cmd(&dev->axes[ax], _axis_get_cmd, (void*) &axis_cookie);
+			axis_set_cmd(&dev->axes[ax], _axis_get_cmd((void*) &axis_cookie));
 		}
 	}
 
@@ -102,7 +102,7 @@ int _dev_run_get_wave(void *userdata) {
 			if (nax < 0) {
 				break;
 			}
-			printf("nax: %d, remain: %d, steps: %d\n", nax, remain, dev->axes[nax].state.move.steps);
+			// printf("nax: %d, remain: %d, steps: %d\n", nax, remain, dev->axes[nax].state.move.steps);
 			if (remain > 0) {
 				total += remain;
 				for (ax = 0; ax < dev->axis_count; ++ax) {
@@ -118,7 +118,7 @@ int _dev_run_get_wave(void *userdata) {
 				pulses[i].gpioOff = pa.off;
 				pulses[i].usDelay = 0;
 			}
-			printf("pulse: on: %d, off: %d, delay: %d\n", pulses[i].gpioOn, pulses[i].gpioOff, pulses[i].usDelay);
+			// printf("pulse: on: %d, off: %d, delay: %d\n", pulses[i].gpioOn, pulses[i].gpioOff, pulses[i].usDelay);
 		}
 		pulse_count = i + 2;
 		printf("total: %d\n", total);
@@ -185,5 +185,13 @@ int dev_run(Device *dev, Generator *gen, Cmd (*get_cmd)(int axis, void *userdata
 
 	free(cookie.pulses);
 
+	return 0;
+}
+
+int dev_clear(Device *dev) {
+	int i;
+	for (i = 0; i < dev->axis_count; ++i) {
+		_axis_state_init(&dev->axes[i].state);
+	}
 	return 0;
 }

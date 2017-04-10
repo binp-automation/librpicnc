@@ -15,8 +15,9 @@ typedef struct {
 } CmdWait;
 
 typedef struct {
-	float speed;
 	int32_t steps;
+	float speed;
+	float accel;
 } CmdMove;
 
 typedef struct {
@@ -41,10 +42,11 @@ Cmd cmd_wait(uint32_t duration) {
 	return cmd;
 }
 
-Cmd cmd_move(float speed, int32_t steps) {
+Cmd cmd_move(int32_t steps, float speed, float accel) {
 	Cmd cmd;
 	cmd.type = CMD_MOVE;
-	cmd.move.speed = speed;
 	cmd.move.steps = steps;
+	cmd.move.speed = speed;
+	cmd.move.accel = accel;
 	return cmd;
 }
