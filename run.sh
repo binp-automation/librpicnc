@@ -1,3 +1,3 @@
 #!/bin/sh
 
-LD_LIBRARY_PATH=./build/pigpio ./build/cnc
+LD_LIBRARY_PATH=./build/pigpio ./target/debug/rpi-cnc

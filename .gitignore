@@ -1,5 +1,3 @@
-build
-*.geany
-*.swp
-*.o
-
+target
+Cargo.lock
+prev
