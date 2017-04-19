@@ -10,6 +10,14 @@
 #include "ringbuffer.h"
 define_ringbuffer(RB, rb, int)
 
+#define ACTION_NONE 0x00
+// [ACTION_NONE]
+#define ACTION_WAIT 0x01
+// [ACTION_WAIT][delayUs]
+#define ACTION_GPIO 0x02
+// [ACTION_GPIO][gpioOn][gpioOff]
+#define _ACTION_SIZE 4
+
 
 typedef struct {
 	RB *wavebuf;
@@ -26,7 +34,20 @@ typedef struct {
 	uint32_t counter;
 } Generator;
 
+
+Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay);
+void gen_free(Generator *gen);
+
+static void _gen_pop_waves(Generator *gen);
+static void _gen_push_wave(Generator *gen, int wave);
+static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), void *userdata);
+
+uint32_t gen_position(const Generator *gen);
+
+void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_data);
+void gen_stop(Generator *gen);
 void gen_clear(Generator *gen);
+
 
 Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay) {
 	if (gpioInitialise() < 0) {
@@ -39,7 +60,7 @@ Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay) {
 	}
 
 	gen->pulse_count = wave_size;
-	gen->pulses = (gpioPulse_t*) malloc(wave_size*sizeof(wave_size));
+	gen->pulses = (gpioPulse_t*) malloc(wave_size*sizeof(gpioPulse_t));
 	if (!gen->pulses) {
 		goto err_pulses;
 	}
@@ -100,22 +121,13 @@ static void _gen_push_wave(Generator *gen, int wave) {
 		src_cbp->next = dst_cbp->next;
 	} else {
 		// printf("rb empty\n");
-		//int n = 
+		int n = 
 		gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT);
 		// printf("tx send, ret: %d\n", n);
 		gen->current = wave;
 	}
 	rb_push(gen->wavebuf, &wave);
 }
-
-
-#define ACTION_NONE 0x00
-// [ACTION_NONE]
-#define ACTION_WAIT 0x01
-// [ACTION_WAIT][delayUs]
-#define ACTION_GPIO 0x02
-// [ACTION_GPIO][gpioOn][gpioOff]
-#define _ACTION_SIZE 4
 
 static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), void *userdata) {
 	gpioPulse_t *pulses = gen->pulses;
@@ -126,7 +138,6 @@ static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), 
 		int i;
 		for (i = 0; i < pulse_count - 2; ++i) {
 			get_action(action, userdata);
-
 			if (action[0] == ACTION_NONE) {
 				break;
 			} else if (action[0] == ACTION_WAIT) {
@@ -185,10 +196,15 @@ void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_da
 		}
 
 		gpioDelay(gen->delay);
+		printf("delay\n");
 
 		if (gpioWaveTxBusy()) {
 			gen->current = gpioWaveTxAt();
+			int pos = gen_position(gen);
+			// printf("busy %d at %d\n", gen->current, pos);
+
 		} else if(gen->run) {
+			// printf("idle and run\n");
 			gen->current = -1;
 			gen->run = 0;
 		}

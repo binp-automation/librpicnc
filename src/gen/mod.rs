@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+
 pub mod action;
 pub use self::action::Action;
 
@@ -20,34 +22,9 @@ extern "C" {
 }
 
 pub struct Params {
-	buffer_size: u32,
-	wave_size: u32,
-	loop_delay: u32,
-}
-
-impl Params {
-	fn new() -> Params {
-		Params { 
-			buffer_size: 16,
-			wave_size: 256,
-			loop_delay: 10000
-		}
-	}
-
-	pub fn buffer_size(mut self, size: u32) -> Params {
-		self.buffer_size = size;
-		self
-	}
-
-	pub fn wave_size(mut self, size: u32) -> Params {
-		self.wave_size = size;
-		self
-	}
-
-	pub fn loop_delay(mut self, delay: u32) -> Params {
-		self.loop_delay = delay;
-		self
-	}
+	_buffer_size: u32,
+	_wave_size: u32,
+	_loop_delay: u32,
 }
 
 pub struct Generator {
@@ -63,7 +40,9 @@ extern "C" fn gen_callback(raw_action: *mut uint32_t, userdata: *mut c_void) {
 		let ref mut get_action = (&mut *(userdata as *mut CallbackWrapper)).callback;
 		let mut action = slice::from_raw_parts_mut(raw_action, 4);
 		match get_action() {
-			Action::None => { action[0] = 0x00; },
+			Action::None => {
+				action[0] = 0x00;
+			},
 			Action::Wait { us } => {
 				action[0] = 0x01;
 				action[1] = us as uint32_t;
@@ -77,17 +56,46 @@ extern "C" fn gen_callback(raw_action: *mut uint32_t, userdata: *mut c_void) {
 	}
 }
 
-impl Generator {
-	pub fn new() -> Result<Self, Error> {
-		Self::new_par(Params::new())
+impl Params {
+	pub fn new() -> Params {
+		Params { 
+			_buffer_size: 16,
+			_wave_size: 256,
+			_loop_delay: 10000
+		}
 	}
 
-	pub fn new_par(par: Params) -> Result<Self, Error> {
+	pub fn buffer_size(mut self, size: u32) -> Params {
+		self._buffer_size = size;
+		self
+	}
+
+	pub fn wave_size(mut self, size: u32) -> Params {
+		self._wave_size = size;
+		self
+	}
+
+	pub fn loop_delay(mut self, delay: u32) -> Params {
+		self._loop_delay = delay;
+		self
+	}
+
+	pub fn build(self) -> Result<Generator, Error> {
+		Generator::from_params(self)
+	}
+}
+
+impl Generator {
+	pub fn new() -> Result<Self, Error> {
+		Self::from_params(Params::new())
+	}
+
+	pub fn from_params(par: Params) -> Result<Self, Error> {
 		let gen = unsafe { 
 			gen_init(
-				par.buffer_size as uint32_t, 
-				par.wave_size as uint32_t,
-				par.loop_delay as uint32_t
+				par._buffer_size as uint32_t, 
+				par._wave_size as uint32_t,
+				par._loop_delay as uint32_t
 			)
 		};
 		if !gen.is_null() {
@@ -95,6 +103,10 @@ impl Generator {
 		} else {
 			Err(Error::new())
 		}
+	}
+
+	pub fn prepare() -> Params {
+		Params::new()
 	}
 
 	pub fn run(&mut self, get_action: &mut FnMut() -> Action) {

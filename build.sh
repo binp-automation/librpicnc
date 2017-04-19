@@ -3,7 +3,7 @@
 git submodule update --init --recursive
 
 cd pigpio
-make libs
+make lib
 cd ..
 
 cargo build
