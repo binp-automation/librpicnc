@@ -6,4 +6,4 @@ cd pigpio
 make lib
 cd ..
 
-cargo build
+RUST_BACKTRACE=1 cargo build -vv

@@ -9,6 +9,7 @@ pub use self::error::Error;
 use std::slice;
 use libc::{c_void, uint32_t};
 
+use generated::generator as gen_macros;
 
 enum _Generator {}
 
@@ -38,17 +39,17 @@ struct CallbackWrapper<'a> {
 extern "C" fn gen_callback(raw_action: *mut uint32_t, userdata: *mut c_void) {
 	unsafe {
 		let ref mut get_action = (&mut *(userdata as *mut CallbackWrapper)).callback;
-		let mut action = slice::from_raw_parts_mut(raw_action, 4);
+		let mut action = slice::from_raw_parts_mut(raw_action, gen_macros::ACTION_SIZE as usize);
 		match get_action() {
 			Action::None => {
-				action[0] = 0x00;
+				action[0] = gen_macros::ACTION_NONE;
 			},
 			Action::Wait { us } => {
-				action[0] = 0x01;
+				action[0] = gen_macros::ACTION_WAIT;
 				action[1] = us as uint32_t;
 			},
 			Action::GPIO { on, off } => {
-				action[0] = 0x02;
+				action[0] = gen_macros::ACTION_GPIO;
 				action[1] = on as uint32_t;
 				action[2] = off as uint32_t;
 			},
@@ -109,9 +110,9 @@ impl Generator {
 		Params::new()
 	}
 
-	pub fn run(&mut self, get_action: &mut FnMut() -> Action) {
+	pub fn run(&mut self, next_action: &mut FnMut() -> Action) {
 		unsafe { 
-			let mut wrapper = CallbackWrapper { callback: get_action };
+			let mut wrapper = CallbackWrapper { callback: next_action };
 			gen_run(self.raw, gen_callback, &mut wrapper as *mut _ as *mut c_void);
 		}
 	}

@@ -2,6 +2,7 @@
 
 extern crate libc;
 
+mod generated;
 mod gen;
 
 use gen::{Action, Generator as Gen};

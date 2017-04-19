@@ -5,55 +5,15 @@
 #include <signal.h>
 #include <assert.h>
 
-#include <pigpio.h>
+#include "generator.h"
 
-#include "ringbuffer.h"
-define_ringbuffer(RB, rb, int)
-
-#define ACTION_NONE 0x00
-// [ACTION_NONE]
-#define ACTION_WAIT 0x01
-// [ACTION_WAIT][delayUs]
-#define ACTION_GPIO 0x02
-// [ACTION_GPIO][gpioOn][gpioOff]
-#define _ACTION_SIZE 4
-
-
-typedef struct {
-	RB *wavebuf;
-
-	gpioPulse_t *pulses;
-	uint32_t pulse_count;
-	int reuse_pulses;
-	uint32_t reuse_count;
-
-	uint32_t delay;
-
-	int current;
-	int run;
-	uint32_t counter;
-} Generator;
-
-
-Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay);
-void gen_free(Generator *gen);
 
 static void _gen_pop_waves(Generator *gen);
 static void _gen_push_wave(Generator *gen, int wave);
 static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), void *userdata);
 
-uint32_t gen_position(const Generator *gen);
-
-void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_data);
-void gen_stop(Generator *gen);
-void gen_clear(Generator *gen);
-
 
 Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay) {
-	if (gpioInitialise() < 0) {
-		goto err_gpio;
-	}
-
 	Generator *gen = (Generator*) malloc(sizeof(Generator));
 	if (!gen) {
 		goto err_alloc;
@@ -80,8 +40,6 @@ err_rb:
 err_pulses:
 	free(gen);
 err_alloc:
-	gpioTerminate();
-err_gpio:
 	return NULL;
 }
 
@@ -90,7 +48,6 @@ void gen_free(Generator *gen) {
 	free(gen->pulses);
 	rb_free(gen->wavebuf);
 	free(gen);
-	gpioTerminate();
 }
 
 static void _gen_pop_waves(Generator *gen) {
@@ -132,7 +89,7 @@ static void _gen_push_wave(Generator *gen, int wave) {
 static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), void *userdata) {
 	gpioPulse_t *pulses = gen->pulses;
 	int pulse_count = gen->pulse_count;
-	uint32_t action[_ACTION_SIZE];
+	uint32_t action[ACTION_SIZE];
 
 	if (!gen->reuse_pulses) {
 		int i;
