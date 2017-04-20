@@ -9,6 +9,8 @@ pub use self::error::Error;
 use std::slice;
 use libc::{c_void, uint32_t};
 
+use gpio::GPIO;
+
 use generated::generator as gen_macros;
 
 enum _Generator {}
@@ -16,13 +18,15 @@ enum _Generator {}
 extern "C" {
 	fn gen_init(buffer_size: uint32_t, wave_size: uint32_t, delay: uint32_t) -> *mut _Generator;
 	fn gen_free(gen: *mut _Generator);
+	
 	fn gen_run(gen: *mut _Generator, get_wave: extern fn(*mut uint32_t, *mut c_void), user_data: *mut c_void);
 	fn gen_stop(gen: *mut _Generator);
-	fn gen_clear(gen: *mut _Generator);
+
 	fn gen_position(gen: *const _Generator) -> uint32_t;
+	fn gen_clear_position(gen: *mut _Generator);
 }
 
-pub struct Params {
+pub struct GeneratorOptions {
 	_buffer_size: u32,
 	_wave_size: u32,
 	_loop_delay: u32,
@@ -57,46 +61,46 @@ extern "C" fn gen_callback(raw_action: *mut uint32_t, userdata: *mut c_void) {
 	}
 }
 
-impl Params {
-	pub fn new() -> Params {
-		Params { 
+impl GeneratorOptions {
+	pub fn new() -> Self {
+		Self { 
 			_buffer_size: 16,
 			_wave_size: 256,
 			_loop_delay: 10000
 		}
 	}
 
-	pub fn buffer_size(mut self, size: u32) -> Params {
+	pub fn buffer_size(mut self, size: u32) -> Self {
 		self._buffer_size = size;
 		self
 	}
 
-	pub fn wave_size(mut self, size: u32) -> Params {
+	pub fn wave_size(mut self, size: u32) -> Self {
 		self._wave_size = size;
 		self
 	}
 
-	pub fn loop_delay(mut self, delay: u32) -> Params {
+	pub fn loop_delay(mut self, delay: u32) -> Self {
 		self._loop_delay = delay;
 		self
 	}
 
 	pub fn build(self) -> Result<Generator, Error> {
-		Generator::from_params(self)
+		Generator::from_options(self)
 	}
 }
 
 impl Generator {
 	pub fn new() -> Result<Self, Error> {
-		Self::from_params(Params::new())
+		Self::from_options(GeneratorOptions::new())
 	}
 
-	pub fn from_params(par: Params) -> Result<Self, Error> {
+	pub fn from_options(opt: GeneratorOptions) -> Result<Self, Error> {
 		let gen = unsafe { 
 			gen_init(
-				par._buffer_size as uint32_t, 
-				par._wave_size as uint32_t,
-				par._loop_delay as uint32_t
+				opt._buffer_size as uint32_t, 
+				opt._wave_size as uint32_t,
+				opt._loop_delay as uint32_t
 			)
 		};
 		if !gen.is_null() {
@@ -106,21 +110,24 @@ impl Generator {
 		}
 	}
 
-	pub fn prepare() -> Params {
-		Params::new()
+	pub fn options() -> GeneratorOptions {
+		GeneratorOptions::new()
 	}
 
-	pub fn run(&mut self, next_action: &mut FnMut() -> Action) {
+	#[allow(unused_variables)]
+	pub fn run(&mut self, gpio: &mut GPIO, next_action: &mut FnMut() -> Action) {
 		unsafe { 
 			let mut wrapper = CallbackWrapper { callback: next_action };
 			gen_run(self.raw, gen_callback, &mut wrapper as *mut _ as *mut c_void);
 		}
 	}
 
-	pub fn stop(&mut self) {
+	#[allow(unused_variables)]
+	pub fn stop(&mut self, gpio: &mut GPIO) {
 		unsafe { gen_stop(self.raw); }
 	}
 
+	/*
 	pub fn clear(&mut self) {
 		unsafe { gen_clear(self.raw); }
 	}
@@ -128,6 +135,7 @@ impl Generator {
 	pub fn position(&self) -> u32 {
 		unsafe { gen_position(self.raw) as u32 }
 	}
+	*/
 }
 
 impl Drop for Generator {

@@ -1,26 +1,65 @@
 extern crate gcc;
 extern crate cmacros;
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 
+fn generate(src: &str, dst: &str) {
+	let mut header_file = File::open(src).unwrap();
+	let mut regenerate = false;
+	let mut output_file = match OpenOptions::new().write(true).open(dst) {
+		Ok(file) => file,
+		Err(..) => { regenerate = true; File::create(dst).unwrap() },
+	};
+
+	let src_time = header_file.metadata().unwrap().modified().unwrap();
+	let dst_time = output_file.metadata().unwrap().modified().unwrap();
+	if regenerate || src_time > dst_time {
+		let mut header_src = String::new();
+		header_file.read_to_string(&mut header_src).unwrap();
+		let macros = cmacros::extract_macros(&header_src).unwrap();
+		let rust_src = cmacros::generate_rust_src(&macros, |def| cmacros::translate_macro(def));
+		output_file.write(rust_src.as_bytes()).unwrap();
+		println!("[ info ] generate '{}' file from '{}' header", dst, src);
+	}
+	println!("cargo:rerun-if-changed={}", src);
+	println!("cargo:rerun-if-changed={}", dst);
+}
+
+fn compile(srcs: &[&str], inc_dirs: &[&str], incs: &[&str], lib: &str) {
+	let mut cfg = gcc::Config::new();
+	for src in srcs {
+		cfg.file(src);
+		println!("cargo:rerun-if-changed={}", src);
+	}
+	for inc_dir in inc_dirs {
+		cfg.include(inc_dir);
+	}
+	for inc in incs {
+		println!("cargo:rerun-if-changed={}", inc);
+	}
+	cfg.compile(&(String::from("lib") + lib + ".a"));
+	println!("[ info ] compile '{}' library", lib);
+	println!("cargo:rustc-link-lib={}", lib);
+}
+
 fn main() {
-	let mut header_file = File::open("src/gen/c/generator.h").unwrap();
-	let mut header_src = String::new();
-	header_file.read_to_string(&mut header_src).unwrap();
-	let macros = cmacros::extract_macros(&header_src).unwrap();
-	let rust_src = cmacros::generate_rust_src(&macros, |def| cmacros::translate_macro(def));
-	let mut output_file = File::create("src/generated/generator.rs").unwrap();
-	output_file.write(rust_src.as_bytes()).unwrap();
-
-	gcc::Config::new()
-		.file("src/gen/c/generator.c")
-		.include("src/gen/c/")
-		.include("pigpio/")
-		.compile("libgenerator.a");
-	println!("cargo:rustc-link-lib=generator");
+	generate(
+		"src/gen/c/generator.h",
+		"src/generated/generator.rs"
+		);
+	compile(
+		&["src/gen/c/generator.c"],
+		&["src/gen/c/", "pigpio/"],
+		&["src/gen/c/ringbuffer.h", "pigpio/pigpio.h"],
+		"generator"
+	);
 
 
+	generate(
+		"pigpio/pigpio.h",
+		"src/generated/pigpio.rs"
+		);
 	println!("cargo:rustc-link-search=pigpio");
 	println!("cargo:rustc-link-lib=pigpio");
 

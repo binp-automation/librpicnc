@@ -34,8 +34,8 @@ typedef struct {
 Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay);
 void gen_free(Generator *gen);
 
-uint32_t gen_position(const Generator *gen);
-
 void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_data);
 void gen_stop(Generator *gen);
-void gen_clear(Generator *gen);
+
+uint32_t gen_position(const Generator *gen);
+void gen_clear_position(Generator *gen);

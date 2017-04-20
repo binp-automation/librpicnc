@@ -8,9 +8,10 @@
 #include "generator.h"
 
 
-static void _gen_pop_waves(Generator *gen);
+static void _gen_pop_waves(Generator *gen, int count_flag);
 static void _gen_push_wave(Generator *gen, int wave);
 static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), void *userdata);
+static uint32_t _gen_wave_offset(const Generator *gen);
 
 
 Generator *gen_init(uint32_t buffer_size, uint32_t wave_size, uint32_t delay) {
@@ -44,18 +45,19 @@ err_alloc:
 }
 
 void gen_free(Generator *gen) {
-	gen_clear(gen);
 	free(gen->pulses);
 	rb_free(gen->wavebuf);
 	free(gen);
 }
 
-static void _gen_pop_waves(Generator *gen) {
+static void _gen_pop_waves(Generator *gen, int count_flag) {
 	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != gen->current) {
 		int wave;
 		rb_pop(gen->wavebuf, &wave);
-		rawWaveInfo_t info = rawWaveInfo(wave);
-		gen->counter += (info.topCB - info.botCB);
+		if (count_flag) {
+			rawWaveInfo_t info = rawWaveInfo(wave);
+			gen->counter += (info.topCB - info.botCB);
+		}
 		// printf("pop wave %d, %d\n", wave, (info.topCB - info.botCB));
 		gpioWaveDelete(wave);
 	}
@@ -142,7 +144,7 @@ static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), 
 
 void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_data) {
 	gen->run = 1;
-
+	gpioSetMode(18, PI_OUTPUT); // TODO: REMOVE
 	while (gen->run) {
 		while (!rb_full(gen->wavebuf)) {
 			int wave = _gen_make_wave(gen, get_action, user_data);
@@ -157,37 +159,49 @@ void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_da
 
 		if (gpioWaveTxBusy()) {
 			gen->current = gpioWaveTxAt();
-			int pos = gen_position(gen);
-			// printf("busy %d at %d\n", gen->current, pos);
-
-		} else if(gen->run) {
-			// printf("idle and run\n");
-			gen->current = -1;
-			gen->run = 0;
+			int pos = _gen_wave_offset(gen);
+			printf("busy %d at %d\n", gen->current, pos);
+		} else {
+			if(gen->run) { // DMA reached waveform end
+				gen->current = -1;
+				_gen_pop_waves(gen, 1);
+				gen->run = 0;
+			} else { // stopped manually
+				_gen_pop_waves(gen, 1);
+				gen->current = -1;
+				_gen_pop_waves(gen, 0);
+			}
 		}
 
 		if (!rb_empty(gen->wavebuf)) {
-			_gen_pop_waves(gen);
+			_gen_pop_waves(gen, 1);
 		}
 	}
 	gen->run = 0;
 }
 
-uint32_t gen_position(const Generator *gen) {
-	uint32_t pos = 0;
-	if (gpioWaveTxBusy()) {
-		pos = gpioWaveTxCbPos();
-	}
-	return gen->counter + pos;
-}
-
 void gen_stop(Generator *gen) {
-	gpioWaveTxStop();
+	if (gpioWaveTxBusy()) {
+		gen->current = gpioWaveTxAt();
+		gpioWaveTxStop();
+	} else {
+		gen->current = -1;
+	}
 	gen->run = 0;
 }
 
-void gen_clear(Generator *gen) {
-	gen->current = -1;
-	_gen_pop_waves(gen);
+static uint32_t _gen_wave_offset(const Generator *gen) {
+	if (gpioWaveTxBusy()) {
+		return gpioWaveTxCbPos();
+	} else {
+		return 0;
+	}
+}
+
+uint32_t gen_position(const Generator *gen) {
+	return gen->counter + _gen_wave_offset(gen);
+}
+
+void gen_clear_position(Generator *gen) {
 	gen->counter = 0;
 }
