@@ -144,7 +144,6 @@ static int _gen_make_wave(Generator *gen, void (*get_action)(uint32_t*, void*), 
 
 void gen_run(Generator *gen, void (*get_action)(uint32_t*, void*), void *user_data) {
 	gen->run = 1;
-	gpioSetMode(18, PI_OUTPUT); // TODO: REMOVE
 	while (gen->run) {
 		while (!rb_full(gen->wavebuf)) {
 			int wave = _gen_make_wave(gen, get_action, user_data);

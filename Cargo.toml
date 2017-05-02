@@ -10,4 +10,4 @@ lazy_static = "0.2.8"
 
 [build-dependencies]
 gcc = "0.3.45"
-cmacros = "0.1.0"
+cmacros = { git = "https://github.com/nthend/rust-cmacros.git", branch = "master" }

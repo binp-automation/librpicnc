@@ -13,10 +13,11 @@ use gen::{Action, Generator as Gen};
 
 fn main() {
 	let mut gpio = GPIO::new().unwrap();
+	// let mut gpio2 = GPIO::new().unwrap();
 	let mut gen = Gen::options().loop_delay(100000).build().unwrap();
 	let mut cnt = 1000;
 	let pin = 18;
-	// gpio.set_mode(pin, gpio::Mode::Output); // and remove from generator.c: gen_run
+	gpio.set_mode(pin, gpio::Mode::Output).unwrap();
 	gen.run(&mut gpio, &mut || -> Action {
 		let action = if cnt > 0 {
 			match cnt % 4 {

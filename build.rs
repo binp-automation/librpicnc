@@ -4,7 +4,7 @@ extern crate cmacros;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 
-fn generate(src: &str, dst: &str) {
+fn generate(src: &str, dst: &str, blacklist: &[&str]) {
 	let mut header_file = File::open(src).unwrap();
 	let mut regenerate = false;
 	let mut output_file = match OpenOptions::new().write(true).open(dst) {
@@ -18,7 +18,20 @@ fn generate(src: &str, dst: &str) {
 		let mut header_src = String::new();
 		header_file.read_to_string(&mut header_src).unwrap();
 		let macros = cmacros::extract_macros(&header_src).unwrap();
-		let rust_src = cmacros::generate_rust_src(&macros, |def| cmacros::translate_macro(def));
+		let rust_src = cmacros::generate_rust_src(&macros, |ref def| {
+			let mut skip = false;
+			for s in blacklist {
+				if def.name.starts_with(s) {
+					skip = true;
+				}
+			}
+			if skip {
+				cmacros::TranslateAction::Skip
+			} else {
+				cmacros::translate_macro(def)
+			}
+			
+		});
 		output_file.write(rust_src.as_bytes()).unwrap();
 		println!("[ info ] generate '{}' file from '{}' header", dst, src);
 	}
@@ -46,7 +59,8 @@ fn compile(srcs: &[&str], inc_dirs: &[&str], incs: &[&str], lib: &str) {
 fn main() {
 	generate(
 		"src/gen/c/generator.h",
-		"src/generated/generator.rs"
+		"src/generated/generator.rs",
+		&[]
 		);
 	compile(
 		&["src/gen/c/generator.c"],
@@ -58,7 +72,8 @@ fn main() {
 
 	generate(
 		"pigpio/pigpio.h",
-		"src/generated/pigpio.rs"
+		"src/generated/pigpio.rs",
+		&["PI_DEFAULT"]
 		);
 	println!("cargo:rustc-link-search=pigpio");
 	println!("cargo:rustc-link-lib=pigpio");
