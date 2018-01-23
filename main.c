@@ -13,8 +13,8 @@
 
 typedef struct {
 	int32_t pos;
-	int32_t vel;
-	int32_t acc;
+	uint32_t vel;
+	uint32_t acc;
 } Chan;
 
 typedef struct {
@@ -26,17 +26,17 @@ Cmd move_cmd(int ax, void *userdata) {
 	Cmd cmd = cmd_none();
 	if (ax == 0 || ax == 1) {
 		if (cookie->chan[ax].pos != 0) {
+			uint8_t dir = cookie->chan[ax].pos > 0;
+			uint32_t pos = (dir ? 1 : -1)*cookie->chan[ax].pos;
 			cmd = cmd_move(
-				cookie->chan[ax].pos,
-				cookie->chan[ax].vel,
-				cookie->chan[ax].acc
+				dir, pos,
+				cookie->chan[ax].vel
 			);
 			cookie->chan[ax].pos = 0;
 		}
 	}
 	return cmd;
 }
-
 
 Generator gen;
 Device dev;
@@ -77,19 +77,19 @@ int cnc_quit() {
 
 int cnc_scan_x() {
 	Axis *axis_x = &dev.axes[0];
-	axis_scan(axis_x, &gen, 2000, 10000);
+	axis_scan(axis_x, &gen, 1000);
 	printf("length: %d\n", axis_x->length);
 	return axis_x->length;
 }
 
 int cnc_scan_y() {
 	Axis *axis_y = &dev.axes[1];
-	axis_scan(axis_y, &gen, 2000, 10000);
+	axis_scan(axis_y, &gen, 1000);
 	printf("length: %d\n", axis_y->length);
 	return axis_y->length;
 }
 
-int cnc_move(int32_t px, int32_t py, int32_t vx, int32_t vy, int32_t ax, int32_t ay) {
+int cnc_move(int32_t px, int32_t py, uint32_t vx, uint32_t vy, uint32_t ax, uint32_t ay) {
 	Cookie cookie;
 	cookie.chan[0].pos = px;
 	cookie.chan[1].pos = py;
@@ -106,5 +106,12 @@ int cnc_move(int32_t px, int32_t py, int32_t vx, int32_t vy, int32_t ax, int32_t
 }
 
 int main() {
+
+	cnc_init();
+
+	cnc_move(0, 1000, 0, 1000, 0, 0);
+
+	cnc_quit();
+
 	return 0;
 }

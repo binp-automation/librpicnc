@@ -12,37 +12,18 @@
 #include "command.h"
 #include "generator.h"
 
-typedef struct {
-
-} _AxisCmdNone;
-
-typedef struct {
-
-} _AxisCmdWait;
-
-
 #define MAX_DELAY 1000000 // us
 #define POST_DELAY 1000 // us
 
-typedef struct {
-	int stage;
-	int phase;
-	float speed;
-	uint32_t steps;
-	uint32_t ramp;
-	uint32_t ramp_steps;
-} _AxisCmdMove;
 
 typedef struct {
 	int idle;
 	int done;
 	Cmd cmd;
 	uint32_t remain; // us
-	union {
-		_AxisCmdNone none;
-		_AxisCmdWait wait;
-		_AxisCmdMove move;
-	};
+	uint32_t steps;
+	uint8_t phase;
+	uint8_t dir; 
 } _AxisState;
 
 void _axis_state_init(_AxisState *st) {
@@ -122,16 +103,9 @@ void axis_set_cmd(Axis *axis, Cmd cmd) {
 		st->done = 1;
 	} else if (cmd.type == CMD_MOVE) {
 		st->remain = 0;
-		st->move.stage = 0;
 		if (cmd.move.steps != 0) {
-			st->move.steps = cmd.move.steps > 0 ? cmd.move.steps : -cmd.move.steps;
-			st->move.phase = 0;
-			st->move.speed = 0.0;
-			st->move.ramp = floor((st->cmd.move.speed*st->cmd.move.speed)/(2*st->cmd.move.accel));
-			if (2*st->move.ramp > st->move.steps) {
-				st->move.ramp = (st->move.steps - 1)/2 + 1;
-			}
-			st->move.ramp_steps = 0;
+			st->steps = cmd.move.steps;
+			st->dir = cmd.move.dir;
 		} else {
 			st->done = 1;
 		}
@@ -144,70 +118,46 @@ PinAction axis_eval_cmd(Axis *axis) {
 	_AxisState *st = &axis->state;
 	PinAction pa = new_pin_action();
 	if (!st->done) {
+		uint32_t delay = 0;
 		if (st->cmd.type == CMD_NONE) {
 			st->done = 1;
 		} else if (st->cmd.type == CMD_WAIT) {
 			st->done = 1;
 		} else if (st->cmd.type == CMD_MOVE) {
-			if (st->move.stage == 0) { // set direction
-				if (st->cmd.move.steps > 0) {
-					pa.on = 1 << axis->pin_dir;
-					axis->direction = 1;
-				} else {
-					pa.off = 1 << axis->pin_dir;
-					axis->direction = 0;
-				}
-				st->remain = 0;
-				st->move.stage += 1;
-			} else {
-				uint32_t delay = MAX_DELAY;
-				if (st->move.stage == 1) { // accelerate
-					float speed = sqrt(2*st->cmd.move.accel*(st->move.ramp_steps + 0.5));
-					delay = FREQ_TO_US(speed);
-					if (delay > MAX_DELAY) {
-						delay = MAX_DELAY;
-					}
-					st->move.ramp_steps += 1;
-					if (st->move.ramp_steps > st->move.ramp) {
-						if (st->move.steps < st->move.ramp) {
-							st->move.stage += 2;
-						} else {
-							st->move.stage += 1;
-						}
-					}
-				} else if (st->move.stage == 2) { // move
-					delay = FREQ_TO_US(st->cmd.move.speed);
-					if (st->move.ramp >= st->move.steps) {
-						st->move.stage += 1;
-					}
-				} else if (st->move.stage == 3) { // decelerate
-					float speed = sqrt(2*st->cmd.move.accel*(st->move.steps - 0.5));
-					delay = FREQ_TO_US(speed);
-					if (delay > MAX_DELAY) {
-						delay = MAX_DELAY;
-					}
-				} else if (st->move.stage == 4) {
-					st->remain = POST_DELAY;
-					st->done = 1;
-				}
-				if (st->move.steps > 0) {
-					if (st->move.phase == 0) {
-						pa.on = 1 << axis->pin_step;
-						st->remain = delay/2;
-						st->move.phase = 1;
-					} else {
-						pa.off = 1 << axis->pin_step;
-						st->remain = (delay - 1)/2 + 1;
-						st->move.phase = 0;
-						st->move.steps -= 1;
-					}
-				}
-				if (st->move.steps <= 0) {
-					st->move.stage = 4;
-				}
-			}
+			delay = st->cmd.move.period;
+		} else if (st->cmd.type == CMD_ACCL) {
+			uint32_t tb = st->cmd.accl.begin_period;
+			uint32_t te = st->cmd.accl.end_period;
+			uint32_t ni = st->steps;
+			uint32_t nn = st->cmd.accl.steps;
+			delay = (nn*tb*te)/((nn - ni)*te + ni*tb);
 		} else {
 			st->done = 1;
+		}
+
+		if (!st->done) {
+			if (st->dir) {
+				pa.on = 1 << axis->pin_dir;
+				axis->direction = 1;
+			} else {
+				pa.off = 1 << axis->pin_dir;
+				axis->direction = 0;
+			}
+			if (st->steps > 0) {
+				if (st->phase == 0) {
+					pa.on = 1 << axis->pin_step;
+					st->remain = delay/2;
+					st->phase = 1;
+				} else {
+					pa.off = 1 << axis->pin_step;
+					st->remain = (delay - 1)/2 + 1;
+					st->phase = 0;
+					st->steps -= 1;
+				}
+			}
+			if (st->steps <= 0) {
+				st->done = 1;
+			}
 		}
 	}
 	return pa;
@@ -274,7 +224,7 @@ int _axis_get_wave(void *userdata) {
 	return wave;
 }
 
-int axis_scan(Axis *axis, Generator *gen, float speed, float accel) {
+int axis_scan(Axis *axis, Generator *gen, uint32_t period) {
 	int pulse_count = 0x100;
 
 	_AxisScanCookie cookie;
@@ -287,7 +237,7 @@ int axis_scan(Axis *axis, Generator *gen, float speed, float accel) {
 	gpioSetAlertFuncEx(axis->pin_right, _axis_scan_alert, (void*) &cookie);
 
 	if (!gpioRead(axis->pin_right)) {
-		axis_set_cmd(axis, cmd_move(0x7fffffff, speed, accel));
+		axis_set_cmd(axis, cmd_move(1, 0xffffffff, period));
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		gen_clear(gen);
 		_axis_state_init(&axis->state);
@@ -296,7 +246,7 @@ int axis_scan(Axis *axis, Generator *gen, float speed, float accel) {
 	cookie.counter = 0;
 	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
-		axis_set_cmd(axis, cmd_move(-0x80000000, speed, accel));
+		axis_set_cmd(axis, cmd_move(0, 0xffffffff, period));
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		axis->length = ((gen->counter/pulse_count)*(pulse_count - 2) + cookie.counter)/4;
 		gen_clear(gen);
