@@ -54,7 +54,7 @@ int cnc_init() {
 	Axis *axis_x = &dev.axes[0];
 	Axis *axis_y = &dev.axes[1];
 	axis_init(axis_x,  6, 13, 19, 16);
-	axis_init(axis_y, 27, 22, 12, 26);
+	axis_init(axis_y, 27, 22, 12,  5);
 
 	return 0;
 }
