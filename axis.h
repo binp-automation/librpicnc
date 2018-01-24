@@ -12,6 +12,29 @@
 #include "command.h"
 #include "generator.h"
 
+
+#define sqr(x) ((x)*(x))
+
+uint32_t isqrt(uint32_t x){
+	uint32_t op  = x;
+	uint32_t res = 0;
+	uint32_t one = 1uL << 30; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
+	// "one" starts at the highest power of four <= than the argument.
+	while (one > op) {
+		one >>= 2;
+	}
+	while (one != 0) {
+		if (op >= res + one) {
+			op = op - (res + one);
+			res = res +  2 * one;
+		}
+		res >>= 1;
+		one >>= 2;
+	}
+	return res;
+}
+
+
 #define MAX_DELAY 1000000 // us
 #define POST_DELAY 1000 // us
 
@@ -109,6 +132,14 @@ void axis_set_cmd(Axis *axis, Cmd cmd) {
 		} else {
 			st->done = 1;
 		}
+	} else if (cmd.type == CMD_ACCL) {
+		st->remain = 0;
+		if (cmd.accl.steps != 0) {
+			st->steps = cmd.accl.steps;
+			st->dir = cmd.accl.dir;
+		} else {
+			st->done = 1;
+		}
 	} else {
 		st->done = 1;
 	}
@@ -128,9 +159,15 @@ PinAction axis_eval_cmd(Axis *axis) {
 		} else if (st->cmd.type == CMD_ACCL) {
 			uint32_t tb = st->cmd.accl.begin_period;
 			uint32_t te = st->cmd.accl.end_period;
-			uint32_t ni = st->steps;
-			uint32_t nn = st->cmd.accl.steps;
-			delay = (nn*tb*te)/((nn - ni)*te + ni*tb);
+			uint32_t i = st->steps;
+			uint32_t n = st->cmd.accl.steps;
+			if (te == 0) {
+				delay = (tb*isqrt(2*n))/isqrt(2*i + 1);
+			} else if (tb == 0) {
+				delay = (te*isqrt(2*n))/isqrt(2*n - 2*i - 1);
+			} else {
+				delay = (tb*te*isqrt(2*n))/isqrt(tb*tb*(2*n - 2*i - 1) + te*te*(2*i + 1));
+			}
 		} else {
 			st->done = 1;
 		}

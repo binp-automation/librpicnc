@@ -12,9 +12,10 @@
 #include "device.h"
 
 typedef struct {
+	uint8_t num;
 	int32_t pos;
-	uint32_t vel;
-	uint32_t acc;
+	float vel;
+	float acc;
 } Chan;
 
 typedef struct {
@@ -25,14 +26,29 @@ Cmd move_cmd(int ax, void *userdata) {
 	Cookie *cookie = (Cookie*) userdata;
 	Cmd cmd = cmd_none();
 	if (ax == 0 || ax == 1) {
-		if (cookie->chan[ax].pos != 0) {
-			uint8_t dir = cookie->chan[ax].pos > 0;
-			uint32_t pos = (dir ? 1 : -1)*cookie->chan[ax].pos;
-			cmd = cmd_move(
-				dir, pos,
-				cookie->chan[ax].vel
-			);
-			cookie->chan[ax].pos = 0;
+		Chan *ch = &cookie->chan[ax];
+		if (ch->pos != 0) {
+			uint8_t d = ch->pos > 0;
+			uint32_t p = (d ? 1 : -1)*ch->pos;
+			uint32_t t = 1e6/ch->vel;
+			uint32_t ap = sqr(ch->vel)/(2*ch->acc);
+			if (2*ap > p) {
+				float v = sqrt(ch->acc*p);
+				t = 1e6/v;
+				ap = p/2;
+				p = p - 2*ap;
+			}
+			if (ch->num == 0) {
+				cmd = cmd_accl(d, ap, 0, t);
+				ch->num += 1;
+			} else if (ch->num == 1) {
+				cmd = cmd_move(d, p, t);
+				ch->num += 1;
+			} else if (ch->num == 2) {
+				cmd = cmd_accl(d, ap, t, 0);
+				ch->num += 1;
+			}
+
 		}
 	}
 	return cmd;
@@ -89,8 +105,12 @@ int cnc_scan_y() {
 	return axis_y->length;
 }
 
-int cnc_move(int32_t px, int32_t py, uint32_t vx, uint32_t vy, uint32_t ax, uint32_t ay) {
+int cnc_move(int32_t px, int32_t py, float vx, float vy, float ax, float ay) {
+	printf("%d, %d, %f, %f, %f, %f", px, py, vx, vy, ax, ay);
+
 	Cookie cookie;
+	cookie.chan[0].num = 0;
+	cookie.chan[1].num = 0;
 	cookie.chan[0].pos = px;
 	cookie.chan[1].pos = py;
 	cookie.chan[0].vel = vx;
@@ -109,7 +129,7 @@ int main() {
 
 	cnc_init();
 
-	cnc_move(0, 1000, 0, 1000, 0, 0);
+	cnc_move(0, 1000, 1000, 1000, 5000, 5000);
 
 	cnc_quit();
 
