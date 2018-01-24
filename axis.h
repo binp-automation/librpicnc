@@ -293,6 +293,8 @@ int axis_scan(Axis *axis, Generator *gen, float speed, float accel) {
 		_axis_state_init(&axis->state);
 	}
 
+	gpioDelay(1000);
+
 	cookie.counter = 0;
 	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
