@@ -50,7 +50,7 @@ void _gen_pop_waves(Generator *gen) {
 		rb_pop(gen->wavebuf, &wave);
 		rawWaveInfo_t info = rawWaveInfo(wave);
 		gen->counter += (info.topCB - info.botCB);
-		printf("pop wave %d, %d\n", wave, (info.topCB - info.botCB));
+		//printf("pop wave %d, %d\n", wave, (info.topCB - info.botCB));
 		gpioWaveDelete(wave);
 	}
 }
@@ -62,18 +62,19 @@ void _gen_push_wave(Generator *gen, int wave) {
 
 	assert(!rb_full(gen->wavebuf));
 	
-	printf("push wave %d\n", wave);
+	//printf("push wave %d\n", wave);
 
 	if (!rb_empty(gen->wavebuf)) {
 		int prev_wave = *(int*) rb_head(gen->wavebuf);
-		printf("rb non-empty, last wave: %d\n", prev_wave);
+		//printf("rb non-empty, last wave: %d\n", prev_wave);
 		rawCbs_t *src_cbp = rawWaveCBAdr(rawWaveInfo(prev_wave).topCB - 1);
 		rawCbs_t *dst_cbp = rawWaveCBAdr(rawWaveInfo(wave).botCB);
 		src_cbp->next = dst_cbp->next;
 	} else {
-		printf("rb empty\n");
-		int n = gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT);
-		printf("tx send, ret: %d\n", n);
+		//printf("rb empty\n");
+		//int n =
+		gpioWaveTxSend(wave, PI_WAVE_MODE_ONE_SHOT);
+		//printf("tx send, ret: %d\n", n);
 		gen->current = wave;
 	}
 	rb_push(gen->wavebuf, &wave);

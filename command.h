@@ -13,13 +13,13 @@ typedef struct {
 } CmdNone;
 
 typedef struct {
-	uint32_t duration;
+	uint32_t duration; // us
 } CmdWait;
 
 typedef struct {
 	uint8_t dir;
 	uint32_t steps;
-	uint32_t period;
+	uint32_t period; // us
 } CmdMove;
 
 typedef struct {

@@ -34,6 +34,27 @@ uint32_t isqrt(uint32_t x){
 	return res;
 }
 
+uint64_t isqrt64(uint64_t x){
+	uint64_t op  = x;
+	uint64_t res = 0;
+	// The second-to-top bit is set: 
+	// use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
+	uint64_t one = (uint64_t)1 << 62; 
+	// "one" starts at the highest power of four <= than the argument.
+	while (one > op) {
+		one >>= 2;
+	}
+	while (one != 0) {
+		if (op >= res + one) {
+			op = op - (res + one);
+			res = res +  2 * one;
+		}
+		res >>= 1;
+		one >>= 2;
+	}
+	return res;
+}
+
 
 #define MAX_DELAY 1000000 // us
 #define POST_DELAY 1000 // us
@@ -157,16 +178,16 @@ PinAction axis_eval_cmd(Axis *axis) {
 		} else if (st->cmd.type == CMD_MOVE) {
 			delay = st->cmd.move.period;
 		} else if (st->cmd.type == CMD_ACCL) {
-			uint32_t tb = st->cmd.accl.begin_period;
-			uint32_t te = st->cmd.accl.end_period;
-			uint32_t i = st->steps;
-			uint32_t n = st->cmd.accl.steps;
+			uint64_t tb = st->cmd.accl.begin_period;
+			uint64_t te = st->cmd.accl.end_period;
+			uint64_t i = st->steps;
+			uint64_t n = st->cmd.accl.steps;
 			if (te == 0) {
-				delay = (tb*isqrt(2*n))/isqrt(2*i + 1);
+				delay = (tb*isqrt64(2*n))/isqrt64(2*i + 1);
 			} else if (tb == 0) {
-				delay = (te*isqrt(2*n))/isqrt(2*n - 2*i - 1);
+				delay = (te*isqrt64(2*n))/isqrt64(2*n - 2*i - 1);
 			} else {
-				delay = (tb*te*isqrt(2*n))/isqrt(tb*tb*(2*n - 2*i - 1) + te*te*(2*i + 1));
+				delay = (tb*te*isqrt64(2*n))/isqrt64(tb*tb*(2*n - 2*i - 1) + te*te*(2*i + 1));
 			}
 		} else {
 			st->done = 1;
@@ -256,7 +277,7 @@ int _axis_get_wave(void *userdata) {
 	gpioWaveAddGeneric(pulse_count, pulses);
 	int wave = gpioWaveCreate();
 
-	printf("wid: %d\n", wave);
+	//printf("wid: %d\n", wave);
 
 	return wave;
 }

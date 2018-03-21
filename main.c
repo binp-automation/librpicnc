@@ -14,6 +14,7 @@
 typedef struct {
 	uint8_t num;
 	int32_t pos;
+	float ivel;
 	float vel;
 	float acc;
 } Chan;
@@ -30,22 +31,23 @@ Cmd move_cmd(int ax, void *userdata) {
 		if (ch->pos != 0) {
 			uint8_t d = ch->pos > 0;
 			uint32_t p = (d ? 1 : -1)*ch->pos;
+			uint32_t it = ch->ivel > 1.0 ? 1e6/ch->ivel : 0;
 			uint32_t t = 1e6/ch->vel;
-			uint32_t ap = sqr(ch->vel)/(2*ch->acc);
+			uint32_t ap = (sqr(ch->vel) - sqr(ch->ivel))/(2*ch->acc);
 			if (2*ap > p) {
-				float v = sqrt(ch->acc*p);
+				float v = sqrt(ch->acc*p + sqr(ch->ivel));
 				t = 1e6/v;
 				ap = p/2;
 				p = p - 2*ap;
 			}
 			if (ch->num == 0) {
-				cmd = cmd_accl(d, ap, 0, t);
+				cmd = cmd_accl(d, ap, it, t);
 				ch->num += 1;
 			} else if (ch->num == 1) {
 				cmd = cmd_move(d, p, t);
 				ch->num += 1;
 			} else if (ch->num == 2) {
-				cmd = cmd_accl(d, ap, t, 0);
+				cmd = cmd_accl(d, ap, t, it);
 				ch->num += 1;
 			}
 
@@ -105,14 +107,21 @@ int cnc_scan_y() {
 	return axis_y->length;
 }
 
-int cnc_move(int32_t px, int32_t py, float vx, float vy, float ax, float ay) {
-	printf("%d, %d, %f, %f, %f, %f", px, py, vx, vy, ax, ay);
+int cnc_move(
+	int32_t px, int32_t py, 
+	float ivx, float ivy, 
+	float vx, float vy, 
+	float ax, float ay
+) {
+	printf("%d, %d, %f, %f, %f, %f\n", px, py, vx, vy, ax, ay);
 
 	Cookie cookie;
 	cookie.chan[0].num = 0;
 	cookie.chan[1].num = 0;
 	cookie.chan[0].pos = px;
 	cookie.chan[1].pos = py;
+	cookie.chan[0].ivel = ivx;
+	cookie.chan[1].ivel = ivy;
 	cookie.chan[0].vel = vx;
 	cookie.chan[1].vel = vy;
 	cookie.chan[0].acc = ax;
@@ -129,7 +138,7 @@ int main() {
 
 	cnc_init();
 
-	cnc_move(0, 1000, 1000, 1000, 5000, 5000);
+	cnc_move(1000, 1000, 0, 0, 1000, 1000, 5000, 5000);
 
 	cnc_quit();
 
