@@ -3,18 +3,31 @@
 #include <stdlib.h>
 
 #define CMD_NONE       0x00
-#define CMD_WAIT       0x01
-#define CMD_MOVE       0x02
-#define CMD_ACCL       0x03
-#define CMD_SINE       0x04
+
+#define CMD_IDLE       0x01
+#define CMD_WAIT       0x02
+#define CMD_SYNC       0x03
+
+#define CMD_MOVE       0x11
+#define CMD_ACCL       0x12
+#define CMD_SINE       0x13
 
 typedef struct {
 	
 } CmdNone;
 
 typedef struct {
+	
+} CmdIdle;
+
+typedef struct {
 	uint32_t duration; // us
 } CmdWait;
+
+typedef struct {
+	uint32_t id;
+	uint32_t count;
+} CmdSync;
 
 typedef struct {
 	uint8_t dir;
@@ -40,11 +53,12 @@ typedef struct {
 typedef struct {
 	int type;
 	union {
-		CmdNone      none;
-		CmdWait      wait;
-		CmdMove      move;
-		CmdAccl      accl;
-		CmdSine      sine;
+		CmdNone none;
+		CmdWait wait;
+		CmdSync sync;
+		CmdMove move;
+		CmdAccl accl;
+		CmdSine sine;
 	};
 } Cmd;
 
@@ -54,10 +68,24 @@ Cmd cmd_none() {
 	return cmd;
 }
 
+Cmd cmd_idle() {
+	Cmd cmd;
+	cmd.type = CMD_IDLE;
+	return cmd;
+}
+
 Cmd cmd_wait(uint32_t duration) {
 	Cmd cmd;
 	cmd.type = CMD_WAIT;
 	cmd.wait.duration = duration;
+	return cmd;
+}
+
+Cmd cmd_sync(uint32_t id, uint32_t count) {
+	Cmd cmd;
+	cmd.type = CMD_SYNC;
+	cmd.sync.id = id;
+	cmd.sync.count = count;
 	return cmd;
 }
 

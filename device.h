@@ -15,6 +15,7 @@
 define_ringbuffer(RBC, rbc, Cmd)
 
 #define MAX_AXES 8
+#define SYNC_MAP_SIZE MAX_AXES
 
 typedef struct {
 	Axis axes[MAX_AXES];
@@ -31,6 +32,12 @@ int dev_free(Device *dev) {
 }
 
 typedef struct {
+	uint32_t in;
+	uint32_t out;
+	uint32_t count;
+} _SyncMapEntry;
+
+typedef struct {
 	Device *dev;
 	Generator *gen;
 	Cmd (*get_cmd)(int, void*);
@@ -39,6 +46,7 @@ typedef struct {
 	int pulse_count;
 	int reuse_pulses;
 	int reuse_count;
+	_SyncMapEntry sync_map[SYNC_MAP_SIZE];
 } _DevRunCookie;
 
 void _dev_run_alert(int gpio, int level, uint32_t tick, void *userdata) {
@@ -82,27 +90,46 @@ int _dev_run_get_wave(void *userdata) {
 	axis_cookie.userdata = cookie->userdata;
 
 	int i, ax;
-	for (ax = 0; ax < dev->axis_count; ++ax) {
-		if (dev->axes[ax].state.idle) {
-			axis_cookie.axis = ax;
-			axis_set_cmd(&dev->axes[ax], _axis_get_cmd((void*) &axis_cookie));
-		}
-	}
-
 	if (!cookie->reuse_pulses) {
 		int total = 0;
 		for (i = 0; i < pulse_count - 2; ++i) {
 			int nax = -1, remain = 0;
 			for (ax = 0; ax < dev->axis_count; ++ax) {
-				if (!dev->axes[ax].state.idle && (nax < 0 || dev->axes[ax].state.remain < remain)) {
-					nax = ax;
-					remain = dev->axes[ax].state.remain;
+				_AxisState *axst = &dev->axes[ax].state;
+				if (axst->idle) {
+					if (axst->cmd.type == CMD_SYNC) {
+						_SyncMapEntry *sme = &cookie->sync_map[axst->cmd.sync.id % SYNC_MAP_SIZE];
+						//printf("[sme] in: %d, out: %d, count %d\n", sme->in, sme->out, sme->count);
+						//printf("[sync] id: %d, count %d\n", axst->cmd.sync.id, axst->cmd.sync.count);
+						if (!axst->done) {
+							if (sme->count == 0) {
+								sme->count = axst->cmd.sync.count;
+							}
+							sme->in += 1;
+							axst->done = 1;
+						}
+						if (sme->in >= sme->count) {
+							sme->out += 1;
+							if (sme->out >= sme->count) {
+								sme->count = 0;
+								sme->in = 0;
+								sme->out = 0;
+							}
+							nax = ax;
+							remain = 0;
+						}
+					}
+				} else {
+					if (nax < 0 || axst->remain < remain) {
+						nax = ax;
+						remain = axst->remain;
+					}
 				}
 			}
 			if (nax < 0) {
 				break;
 			}
-			// printf("nax: %d, remain: %d, steps: %d\n", nax, remain, dev->axes[nax].state.move.steps);
+			// printf("nax: %d, remain: %d, steps: %d\n", nax, remain, dev->axes[nax].state.steps);
 			if (remain > 0) {
 				total += remain;
 				for (ax = 0; ax < dev->axis_count; ++ax) {
@@ -156,6 +183,7 @@ int _dev_run_get_wave(void *userdata) {
 }
 
 int dev_run(Device *dev, Generator *gen, Cmd (*get_cmd)(int axis, void *userdata), void *userdata) {
+	int i;
 	_DevRunCookie cookie;
 	cookie.dev = dev;
 	cookie.gen = gen;
@@ -169,7 +197,11 @@ int dev_run(Device *dev, Generator *gen, Cmd (*get_cmd)(int axis, void *userdata
 	cookie.reuse_pulses = 0;
 	cookie.reuse_count = 0;
 
-	int i;
+	for (i = 0; i < SYNC_MAP_SIZE; ++i) {
+		cookie.sync_map[i].in = 0;
+		cookie.sync_map[i].out = 0;
+		cookie.sync_map[i].count = 0;
+	}
 
 	for (i = 0; i < dev->axis_count; ++i) {
 		gpioSetAlertFuncEx(dev->axes[i].pin_left, _dev_run_alert, (void*) &cookie);

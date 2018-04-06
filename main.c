@@ -21,11 +21,12 @@ typedef struct {
 
 typedef struct {
 	Chan chan[2];
+	int repeats;
 } Cookie;
 
 Cmd move_cmd(int ax, void *userdata) {
 	Cookie *cookie = (Cookie*) userdata;
-	Cmd cmd = cmd_none();
+	Cmd cmd = cmd_idle();
 	if (ax == 0 || ax == 1) {
 		Chan *ch = &cookie->chan[ax];
 		if (ch->pos != 0) {
@@ -49,10 +50,18 @@ Cmd move_cmd(int ax, void *userdata) {
 			} else if (ch->num == 2) {
 				cmd = cmd_accl(d, ap, t, it);
 				ch->num += 1;
+			} else if (ch->num == 3) {
+				cmd = cmd_sync(0, 2);
+				ch->num += 1;
+				cookie->repeats -= 1;
+				if (cookie->repeats > 0) {
+					ch->num = 0;
+					ch->pos = -ch->pos;
+				}
 			}
-
 		}
 	}
+	printf("axis: %d, cmd: %d\n", ax, cmd.type);
 	return cmd;
 }
 
@@ -71,8 +80,8 @@ int cnc_init() {
 
 	Axis *axis_x = &dev.axes[0];
 	Axis *axis_y = &dev.axes[1];
-	axis_init(axis_x, 19, 26, 14, 15);
-	axis_init(axis_y,  5,  6, 17, 27);
+	axis_init(axis_x,  5,  6, 18, 15);
+	axis_init(axis_y, 16, 20, 27, 22);
 
 	return 0;
 }
@@ -107,6 +116,7 @@ int cnc_scan_y() {
 	return axis_y->length;
 }
 
+int REPEATS = 0;
 int cnc_move(
 	int32_t px, int32_t py, 
 	float ivx, float ivy, 
@@ -116,6 +126,7 @@ int cnc_move(
 	printf("%d, %d, %f, %f, %f, %f\n", px, py, vx, vy, ax, ay);
 
 	Cookie cookie;
+	cookie.repeats = REPEATS;
 	cookie.chan[0].num = 0;
 	cookie.chan[1].num = 0;
 	cookie.chan[0].pos = px;
@@ -138,7 +149,9 @@ int main() {
 
 	cnc_init();
 
-	cnc_move(1000, 1000, 0, 0, 1000, 1000, 5000, 5000);
+	REPEATS = 100;
+	cnc_move(2000, 500, 0, 0, 1000, 1000, 5000, 5000);
+	REPEATS = 0;
 
 	cnc_quit();
 

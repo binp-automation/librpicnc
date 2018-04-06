@@ -71,7 +71,7 @@ typedef struct {
 } _AxisState;
 
 void _axis_state_init(_AxisState *st) {
-	st->idle = 1;
+	st->idle = 0;
 	st->done = 1;
 	st->cmd = cmd_none();
 	st->remain = 0;
@@ -140,11 +140,16 @@ void axis_set_cmd(Axis *axis, Cmd cmd) {
 	st->cmd = cmd;
 	st->idle = 0;
 	st->done = 0;
+	st->remain = 0;
 	if (cmd.type == CMD_NONE) {
+		st->done = 1;
+	} else if (cmd.type == CMD_IDLE) {
 		st->idle = 1;
 	} else if (cmd.type == CMD_WAIT) {
 		st->remain = cmd.wait.duration;
 		st->done = 1;
+	} else if (cmd.type == CMD_SYNC) {
+		st->idle = 1;
 	} else if (cmd.type == CMD_MOVE) {
 		st->remain = 0;
 		if (cmd.move.steps != 0) {
@@ -169,13 +174,9 @@ void axis_set_cmd(Axis *axis, Cmd cmd) {
 PinAction axis_eval_cmd(Axis *axis) {
 	_AxisState *st = &axis->state;
 	PinAction pa = new_pin_action();
-	if (!st->done) {
+	if (!st->idle && !st->done) {
 		uint32_t delay = 0;
-		if (st->cmd.type == CMD_NONE) {
-			st->done = 1;
-		} else if (st->cmd.type == CMD_WAIT) {
-			st->done = 1;
-		} else if (st->cmd.type == CMD_MOVE) {
+		if (st->cmd.type == CMD_MOVE) {
 			delay = st->cmd.move.period;
 		} else if (st->cmd.type == CMD_ACCL) {
 			uint64_t tb = st->cmd.accl.begin_period;
@@ -193,6 +194,10 @@ PinAction axis_eval_cmd(Axis *axis) {
 			st->done = 1;
 		}
 
+		if (delay > MAX_DELAY) {
+			delay = MAX_DELAY;
+		}
+
 		if (!st->done) {
 			if (st->dir) {
 				pa.on = 1 << axis->pin_dir;
@@ -208,7 +213,7 @@ PinAction axis_eval_cmd(Axis *axis) {
 					st->phase = 1;
 				} else {
 					pa.off = 1 << axis->pin_step;
-					st->remain = (delay - 1)/2 + 1;
+					st->remain = delay/2 + (delay % 2);
 					st->phase = 0;
 					st->steps -= 1;
 				}

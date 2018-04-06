@@ -1,0 +1,4 @@
+
+[ ] init func with axes and pins
+[ ] implement sine command
+[ ] sync state list instead of array
