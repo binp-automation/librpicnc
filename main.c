@@ -10,150 +10,175 @@
 #include "generator.h"
 #include "axis.h"
 #include "device.h"
+#include "task.h"
 
-typedef struct {
-	uint8_t num;
-	int32_t pos;
-	float ivel;
-	float vel;
-	float acc;
-} Chan;
 
-typedef struct {
-	Chan chan[2];
-	int repeats;
-} Cookie;
+static int initialized = 0;
+static Device device;
+static Generator generator;
 
-Cmd move_cmd(int ax, void *userdata) {
-	Cookie *cookie = (Cookie*) userdata;
-	Cmd cmd = cmd_idle();
-	if (ax == 0 || ax == 1) {
-		Chan *ch = &cookie->chan[ax];
-		if (ch->pos != 0) {
-			uint8_t d = ch->pos > 0;
-			uint32_t p = (d ? 1 : -1)*ch->pos;
-			uint32_t it = ch->ivel > 1.0 ? 1e6/ch->ivel : 0;
-			uint32_t t = 1e6/ch->vel;
-			uint32_t ap = (sqr(ch->vel) - sqr(ch->ivel))/(2*ch->acc);
-			if (2*ap > p) {
-				float v = sqrt(ch->acc*p + sqr(ch->ivel));
-				t = 1e6/v;
-				ap = p/2;
-				p = p - 2*ap;
-			}
-			if (ch->num == 0) {
-				cmd = cmd_accl(d, ap, it, t);
-				ch->num += 1;
-			} else if (ch->num == 1) {
-				cmd = cmd_move(d, p, t);
-				ch->num += 1;
-			} else if (ch->num == 2) {
-				cmd = cmd_accl(d, ap, t, it);
-				ch->num += 1;
-			} else if (ch->num == 3) {
-				cmd = cmd_sync(0, 2);
-				ch->num += 1;
-				cookie->repeats -= 1;
-				if (cookie->repeats > 0) {
-					ch->num = 0;
-					ch->pos = -ch->pos;
-				}
-			}
-		}
-	}
-	printf("axis: %d, cmd: %d\n", ax, cmd.type);
-	return cmd;
+/*
+typedef struct TaskQueue {
+	Task *buffer;
+	int pos;
+	int end;
+	int length;
 }
 
-Generator gen;
-Device dev;
+static TaskQueue task_queue;
 
-int cnc_init() {
-	printf("start\n");
-	if (gpioInitialise() < 0) {
-		printf("error gpio init\n");
+void _task_queue_init(TaskQueue *tq) {
+	int len = 0x100;
+	tq.buffer = malloc(sizeof(Task)*len);
+	tq.length = len;
+	tq.pos = 0;
+	tq.end = 0;
+}
+
+void _task_queue_free(TaskQueue *tq) {
+	free(tq.buffer);
+}
+*/
+
+int cnc_init(int axes_count, AxisInfo *axes_info) {
+	printf("[ cnc ] %s\n", __func__);
+
+	if (initialized) {
+		printf("[error] cnc already initialized\n");
 		return 1;
 	}
 
-	gen_init(&gen, 0x10);
-	dev_init(&dev, 2);
+	if (gpioInitialise() < 0) {
+		printf("[error] cannot initialize cnc\n");
+		return 2;
+	}
 
-	Axis *axis_x = &dev.axes[0];
-	Axis *axis_y = &dev.axes[1];
-	axis_init(axis_x,  5,  6, 18, 15);
-	axis_init(axis_y, 16, 20, 27, 22);
+	gen_init(&generator, 0x10);
+	dev_init(&device, axes_count);
+	//_task_queue_init(&task_queue);
+
+	int i;
+	for (i = 0; i < axes_count; ++i) {
+		AxisInfo *ai = &axes_info[i];
+		axis_init(
+			&device.axes[i],
+			ai->step, ai->dir,
+			ai->left, ai->right
+		);
+	}
+
+	initialized = 1;
 
 	return 0;
 }
 
 int cnc_quit() {
-	Axis *axis_x = &dev.axes[0];
-	Axis *axis_y = &dev.axes[1];
-	axis_free(axis_x);
-	axis_free(axis_y);
+	printf("[ cnc ] %s\n", __func__);
+	if (!initialized) {
+		printf("[error] cnc was not initialized\n");
+		return 1;
+	}
 
-	dev_free(&dev);
-	gen_free(&gen);
+	int i;
+	for (i = 0; i < device.axes_count; ++i) {
+		axis_free(&dev.axes[i]);
+	}
+
+	dev_free(&device);
+	gen_free(&generator);
+	//_task_queue_free(&task_queue);
 
 	gpioTerminate();
-	
-	printf("stop\n");
 
+	initialized = 0;
 	return 0;
 }
 
-int cnc_scan_x() {
-	Axis *axis_x = &dev.axes[0];
-	axis_scan(axis_x, &gen, 1000);
-	printf("length: %d\n", axis_x->length);
-	return axis_x->length;
-}
+/*
+int cnc_push_task(Task task) {
+	printf("[ cnc ] %s\n", __func__);
 
-int cnc_scan_y() {
-	Axis *axis_y = &dev.axes[1];
-	axis_scan(axis_y, &gen, 1000);
-	printf("length: %d\n", axis_y->length);
-	return axis_y->length;
-}
+	TaskQueue *tq = &task_queue;
+	if (tq->end >= tq->length) {
+		printf("[error] task_queue full\n");
+		return 1;
+	}
 
-int REPEATS = 0;
-int cnc_move(
-	int32_t px, int32_t py, 
-	float ivx, float ivy, 
-	float vx, float vy, 
-	float ax, float ay
-) {
-	printf("%d, %d, %f, %f, %f, %f\n", px, py, vx, vy, ax, ay);
-
-	Cookie cookie;
-	cookie.repeats = REPEATS;
-	cookie.chan[0].num = 0;
-	cookie.chan[1].num = 0;
-	cookie.chan[0].pos = px;
-	cookie.chan[1].pos = py;
-	cookie.chan[0].ivel = ivx;
-	cookie.chan[1].ivel = ivy;
-	cookie.chan[0].vel = vx;
-	cookie.chan[1].vel = vy;
-	cookie.chan[0].acc = ax;
-	cookie.chan[1].acc = ay;
-
-	dev_run(&dev, &gen, move_cmd, (void*) &cookie);
-	gen_clear(&gen);
-	dev_clear(&dev);
+	tq->buffer[tq->end] = task;
+	tq->end += 1;
 
 	return 0;
 }
+*/
+
+int cnc_clear() {
+	gen_clear(&generator);
+	dev_clear(&device);
+	return 0;
+}
+
+typedef struct {
+	Cmd *cmds;
+	int pos;
+	int len;
+} CmdsChannel;
+
+typedef struct {
+	CmdsChannel chs[MAX_AXES];
+} CmdsCookie;
+
+Cmd next_cmd(int axis, void *userdata) {
+	CmdsCookie *cookie = (CmdsCookie*) userdata;
+	Cmd cmd = cmd_idle();
+	CmdsChannel *ch = &cookie->chs[axis];
+	if (ch->pos < ch->len) {
+		cmd = ch->cmds[ch->pos];
+		ch->pos += 1;
+	}
+	return cmd;
+}
+
+int run_task(Task task) {
+	if (task.type == TASK_NONE) {
+		// pass
+	} else if (task.type == TASK_SCAN) {
+		Axis *axis = &dev.axes[task.axis];
+		axis_scan(&axis, &gen, task.t_ivel);
+		printf("length: %d\n", axis->length);
+		task.length = axis->length;
+	} else if (task.type == TASK_CMDS) {
+		CmdsCookie cookie;
+		int i;
+		for (i = 0; i < device->axis_count; ++i) {
+			cookie->chs[i].cmds = task.cmds[i];
+			cookie->chs[i].len = task.cmds_count[i];
+			cookie->chs[i].pos = 0;
+		}
+		dev_run(&device, &generator, next_cmd, (void*) &cookie);
+		cnc_clear();
+	} else {
+		// unknown task type
+		return 1;
+	}
+	return 0;
+}
+
+int cnc_run_task_async() {
+	// TODO
+	return 1;
+}
+
+int cnc_is_busy() {
+	// TODO
+	return 1;
+}
+
+int cnc_stop() {
+	// TODO
+	return 1;
+}
+
 
 int main() {
-
-	cnc_init();
-
-	REPEATS = 100;
-	cnc_move(2000, 500, 0, 0, 1000, 1000, 5000, 5000);
-	REPEATS = 0;
-
-	cnc_quit();
-
 	return 0;
 }

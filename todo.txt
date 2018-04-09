@@ -1,4 +1,7 @@
 
-[ ] init func with axes and pins
+[+] init func with axes and pins
 [ ] implement sine command
 [ ] sync state list instead of array
+
+[ ] task queue arbitrary size
+[ ] remove MAX_AXES

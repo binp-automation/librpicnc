@@ -1,6 +1,6 @@
 BUILD_DIR=build
 
-HEADERS=pigpio/pigpio.h utility.h ringbuffer.h command.h generator.h axis.h device.h
+HEADERS=pigpio/pigpio.h utility.h ringbuffer.h command.h generator.h axis.h device.h main.h
 BIN=$(BUILD_DIR)/cnc
 LIB=$(BUILD_DIR)/cnc.so
 
