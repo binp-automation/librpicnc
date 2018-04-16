@@ -1,3 +1,6 @@
+#include <stdlib.h>
+#include <stdint.h>
+
 #include "device.h"
 #include "generator.h"
 #include "command.h"
@@ -5,10 +8,10 @@
 
 
 typedef struct {
-	int step;
-	int dir;
-	int left;
-	int right;
+	int pin_step;
+	int pin_dir;
+	int pin_left;
+	int pin_right;
 } AxisInfo;
 
 

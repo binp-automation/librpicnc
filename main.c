@@ -14,10 +14,10 @@
 
 
 static int initialized = 0;
+
 static Device device;
 static Generator generator;
 
-/*
 typedef struct TaskQueue {
 	Task *buffer;
 	int pos;
@@ -26,9 +26,9 @@ typedef struct TaskQueue {
 }
 
 static TaskQueue task_queue;
+#define TQLEN 0x100
 
-void _task_queue_init(TaskQueue *tq) {
-	int len = 0x100;
+void _task_queue_init(TaskQueue *tq, int len) {
 	tq.buffer = malloc(sizeof(Task)*len);
 	tq.length = len;
 	tq.pos = 0;
@@ -38,7 +38,6 @@ void _task_queue_init(TaskQueue *tq) {
 void _task_queue_free(TaskQueue *tq) {
 	free(tq.buffer);
 }
-*/
 
 int cnc_init(int axes_count, AxisInfo *axes_info) {
 	printf("[ cnc ] %s\n", __func__);
@@ -55,7 +54,7 @@ int cnc_init(int axes_count, AxisInfo *axes_info) {
 
 	gen_init(&generator, 0x10);
 	dev_init(&device, axes_count);
-	//_task_queue_init(&task_queue);
+	_task_queue_init(&task_queue, TQLEN);
 
 	int i;
 	for (i = 0; i < axes_count; ++i) {
@@ -86,30 +85,13 @@ int cnc_quit() {
 
 	dev_free(&device);
 	gen_free(&generator);
-	//_task_queue_free(&task_queue);
+	_task_queue_free(&task_queue);
 
 	gpioTerminate();
 
 	initialized = 0;
 	return 0;
 }
-
-/*
-int cnc_push_task(Task task) {
-	printf("[ cnc ] %s\n", __func__);
-
-	TaskQueue *tq = &task_queue;
-	if (tq->end >= tq->length) {
-		printf("[error] task_queue full\n");
-		return 1;
-	}
-
-	tq->buffer[tq->end] = task;
-	tq->end += 1;
-
-	return 0;
-}
-*/
 
 int cnc_clear() {
 	gen_clear(&generator);
@@ -160,6 +142,22 @@ int run_task(Task task) {
 		// unknown task type
 		return 1;
 	}
+	return 0;
+}
+
+
+int _cnc_push_task(Task task) {
+	printf("[ cnc ] %s\n", __func__);
+
+	TaskQueue *tq = &task_queue;
+	if (tq->end >= tq->length) {
+		printf("[error] task_queue full\n");
+		return 1;
+	}
+
+	tq->buffer[tq->end] = task;
+	tq->end += 1;
+
 	return 0;
 }
 

@@ -26,8 +26,8 @@ typedef struct {
 	// in
 	int axis;
 	int t_ivel;
-	//int t_vel;
-	//int tt_acc;
+	int t_vel;
+	int tt_acc;
 	// out
 	int length;
 } TaskScan;
