@@ -1,3 +1,6 @@
+#pragma once
+
+
 #include "device.h"
 #include "command.h"
 
@@ -10,6 +13,12 @@
 #define TASK_GCODE   0x11
 #define TASK_CURVE   0x12
 
+// task status
+#define TS_NONE 0x00
+#define TS_WAIT 0x01
+#define TS_PROC 0x02
+#define TS_DONE 0x03
+#define TS_ERROR 0xF0
 
 // stop codes
 #define SC_DONE         0x01
@@ -71,7 +80,8 @@ typedef struct {
 		TaskCmds    cmds;
 		TaskGCode   gcode;
 		TaskCurve   curve;
-	}
+	};
 	// out
+	int status;
 	int stop_code;
 } Task;

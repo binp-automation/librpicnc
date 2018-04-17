@@ -1,3 +1,6 @@
+#pragma once
+
+
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -17,11 +20,13 @@ typedef struct {
 
 int cnc_init(int axes_count, AxisInfo *axes_info);
 int cnc_quit();
+int cnc_clear();
 
 // synchronous
-int cnc_run_task(Task task);
+int cnc_run_task(Task *task);
 
 // asynchronous
-int cnc_run_task_async(Task task);
+int cnc_push_task(Task *task);
+int cnc_run_async();
 int cnc_is_busy();
 int cnc_stop();

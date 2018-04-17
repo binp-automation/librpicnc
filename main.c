@@ -12,31 +12,35 @@
 #include "device.h"
 #include "task.h"
 
+#include "main.h"
+
+#define DEBUG
+
 
 static int initialized = 0;
 
 static Device device;
 static Generator generator;
 
-typedef struct TaskQueue {
-	Task *buffer;
+typedef struct {
+	Task **buffer;
 	int pos;
 	int end;
 	int length;
-}
+} TaskQueue;
 
 static TaskQueue task_queue;
 #define TQLEN 0x100
 
 void _task_queue_init(TaskQueue *tq, int len) {
-	tq.buffer = malloc(sizeof(Task)*len);
-	tq.length = len;
-	tq.pos = 0;
-	tq.end = 0;
+	tq->buffer = malloc(sizeof(Task*)*len);
+	tq->length = len;
+	tq->pos = 0;
+	tq->end = 0;
 }
 
 void _task_queue_free(TaskQueue *tq) {
-	free(tq.buffer);
+	free(tq->buffer);
 }
 
 int cnc_init(int axes_count, AxisInfo *axes_info) {
@@ -56,14 +60,21 @@ int cnc_init(int axes_count, AxisInfo *axes_info) {
 	dev_init(&device, axes_count);
 	_task_queue_init(&task_queue, TQLEN);
 
+#ifdef DEBUG
+	printf("axes_count: %d\n", axes_count);
+#endif /* DEBUG */
+
 	int i;
 	for (i = 0; i < axes_count; ++i) {
 		AxisInfo *ai = &axes_info[i];
 		axis_init(
 			&device.axes[i],
-			ai->step, ai->dir,
-			ai->left, ai->right
+			ai->pin_step, ai->pin_dir,
+			ai->pin_left, ai->pin_right
 		);
+#ifdef DEBUG
+		printf("axis[%d]: s:%d. d:%d, l:%d, r:%d\n", i, ai->pin_step, ai->pin_dir, ai->pin_left, ai->pin_right);
+#endif /* DEBUG */
 	}
 
 	initialized = 1;
@@ -79,8 +90,8 @@ int cnc_quit() {
 	}
 
 	int i;
-	for (i = 0; i < device.axes_count; ++i) {
-		axis_free(&dev.axes[i]);
+	for (i = 0; i < device.axis_count; ++i) {
+		axis_free(&device.axes[i]);
 	}
 
 	dev_free(&device);
@@ -103,16 +114,16 @@ typedef struct {
 	Cmd *cmds;
 	int pos;
 	int len;
-} CmdsChannel;
+} _CmdsChannel;
 
 typedef struct {
-	CmdsChannel chs[MAX_AXES];
-} CmdsCookie;
+	_CmdsChannel chs[MAX_AXES];
+} _CmdsCookie;
 
-Cmd next_cmd(int axis, void *userdata) {
-	CmdsCookie *cookie = (CmdsCookie*) userdata;
+Cmd _next_cmd(int axis, void *userdata) {
+	_CmdsCookie *cookie = (_CmdsCookie*) userdata;
 	Cmd cmd = cmd_idle();
-	CmdsChannel *ch = &cookie->chs[axis];
+	_CmdsChannel *ch = &cookie->chs[axis];
 	if (ch->pos < ch->len) {
 		cmd = ch->cmds[ch->pos];
 		ch->pos += 1;
@@ -120,23 +131,23 @@ Cmd next_cmd(int axis, void *userdata) {
 	return cmd;
 }
 
-int run_task(Task task) {
-	if (task.type == TASK_NONE) {
+int cnc_run_task(Task *task) {
+	if (task->type == TASK_NONE) {
 		// pass
-	} else if (task.type == TASK_SCAN) {
-		Axis *axis = &dev.axes[task.axis];
-		axis_scan(&axis, &gen, task.t_ivel);
+	} else if (task->type == TASK_SCAN) {
+		Axis *axis = &device.axes[task->scan.axis];
+		axis_scan(axis, &generator, task->scan.t_ivel);
 		printf("length: %d\n", axis->length);
-		task.length = axis->length;
-	} else if (task.type == TASK_CMDS) {
-		CmdsCookie cookie;
+		task->scan.length = axis->length;
+	} else if (task->type == TASK_CMDS) {
+		_CmdsCookie cookie;
 		int i;
-		for (i = 0; i < device->axis_count; ++i) {
-			cookie->chs[i].cmds = task.cmds[i];
-			cookie->chs[i].len = task.cmds_count[i];
-			cookie->chs[i].pos = 0;
+		for (i = 0; i < device.axis_count; ++i) {
+			cookie.chs[i].cmds = task->cmds.cmds[i];
+			cookie.chs[i].len = task->cmds.cmds_count[i];
+			cookie.chs[i].pos = 0;
 		}
-		dev_run(&device, &generator, next_cmd, (void*) &cookie);
+		dev_run(&device, &generator, _next_cmd, (void*) &cookie);
 		cnc_clear();
 	} else {
 		// unknown task type
@@ -146,7 +157,9 @@ int run_task(Task task) {
 }
 
 
-int _cnc_push_task(Task task) {
+// asynchronous
+
+int cnc_push_task(Task *task) {
 	printf("[ cnc ] %s\n", __func__);
 
 	TaskQueue *tq = &task_queue;
@@ -161,7 +174,7 @@ int _cnc_push_task(Task task) {
 	return 0;
 }
 
-int cnc_run_task_async() {
+int cnc_run_async() {
 	// TODO
 	return 1;
 }

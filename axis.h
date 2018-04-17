@@ -8,7 +8,6 @@
 
 #include <pigpio.h>
 
-#include "utility.h"
 #include "command.h"
 #include "generator.h"
 
