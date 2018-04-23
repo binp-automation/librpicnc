@@ -34,9 +34,9 @@ typedef struct {
 typedef struct {
 	// in
 	int axis;
-	int t_ivel;
-	int t_vel;
-	int tt_acc;
+	float vel_ini;
+	float vel_max;
+	float acc_max;
 	// out
 	int length;
 } TaskScan;
@@ -44,11 +44,11 @@ typedef struct {
 typedef struct {
 	// in
 	int axis;
-	int it_ivel;
+	// inout
+	float vel_ini;
 	// out
-	float t_ivel;
-	float t_vel;
-	float tt_acc;
+	float vel_max;
+	float acc_max;
 } TaskCalib;
 
 typedef struct {
@@ -75,8 +75,8 @@ typedef struct {
 	int type;
 	union {
 		TaskNone    none;
-		TaskCalib   calib;
 		TaskScan    scan;
+		TaskCalib   calib;
 		TaskCmds    cmds;
 		TaskGCode   gcode;
 		TaskCurve   curve;

@@ -286,7 +286,7 @@ int _axis_get_wave(void *userdata) {
 	return wave;
 }
 
-int axis_scan(Axis *axis, Generator *gen, uint32_t period) {
+int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float acc_max) {
 	int pulse_count = 0x100;
 
 	_AxisScanCookie cookie;
@@ -295,11 +295,15 @@ int axis_scan(Axis *axis, Generator *gen, uint32_t period) {
 	cookie.pulse_count = pulse_count;
 	cookie.pulses = (gpioPulse_t*) malloc(sizeof(gpioPulse_t)*cookie.pulse_count);
 
+	float dt = (vel_max - vel_ini)/acc_max;
+	uint32_t dist_acc = (vel_ini + 0.5*acc_max*dt)*dt;
+
 	gpioSetAlertFuncEx(axis->pin_left, _axis_scan_alert, (void*) &cookie);
 	gpioSetAlertFuncEx(axis->pin_right, _axis_scan_alert, (void*) &cookie);
 
 	if (!gpioRead(axis->pin_right)) {
-		axis_set_cmd(axis, cmd_move(1, 0xffffffff, period));
+		axis_set_cmd(axis, cmd_accl(1, dist_acc, 1e6/vel_ini, 1e6/vel_max));
+		axis_set_cmd(axis, cmd_move(1, 0xffffffff, 1e6/vel_max));
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		gen_clear(gen);
 		_axis_state_init(&axis->state);
@@ -310,7 +314,8 @@ int axis_scan(Axis *axis, Generator *gen, uint32_t period) {
 	cookie.counter = 0;
 	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
-		axis_set_cmd(axis, cmd_move(0, 0xffffffff, period));
+		axis_set_cmd(axis, cmd_accl(0, dist_acc, 1e6/vel_ini, 1e6/vel_max));
+		axis_set_cmd(axis, cmd_move(0, 0xffffffff, 1e6/vel_max));
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		axis->length = ((gen->counter/pulse_count)*(pulse_count - 2) + cookie.counter)/4;
 		gen_clear(gen);

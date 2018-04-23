@@ -3,7 +3,6 @@
 #include <math.h>
 #include <unistd.h>
 #include <signal.h>
-
 #include <pthread.h>
 
 #include <pigpio.h>
@@ -140,7 +139,8 @@ int cnc_run_task(Task *task) {
 			return 2;
 		}
 		Axis *axis = &device.axes[task->scan.axis];
-		axis_scan(axis, &generator, task->scan.t_ivel);
+		axis->length = 0;
+		axis_scan(axis, &generator, task->scan.vel_ini, task->scan.vel_max, task->scan.acc_max);
 		printf("length: %d\n", axis->length);
 		task->scan.length = axis->length;
 	} else if (task->type == TASK_CMDS) {
@@ -224,11 +224,11 @@ int cnc_run_async() {
 }
 
 int cnc_is_busy() {
-	printf("[ cnc ] %s\n", __func__);
+	//printf("[ cnc ] %s\n", __func__);
 
 	int occ = 0;
 	pthread_mutex_lock(&mutex); /// <- LOCK MUTEX
-	occ = tq_occupancy(task_queue);
+	occ = tq_occupancy(task_queue) + !thread_done;
 	pthread_mutex_unlock(&mutex); /// <- UNLOCK MUTEX
 	return occ;
 }
@@ -245,8 +245,10 @@ int cnc_wait() {
 int cnc_stop() {
 	printf("[ cnc ] %s\n", __func__);
 
+	gen_stop(&generator);
+	pthread_cancel(thread);
+	thread_done = 1;
 	cnc_clear();
-	cnc_wait();
 
 	while(!tq_empty(task_queue)) {
 		tq_pop(task_queue, NULL);
