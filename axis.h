@@ -326,3 +326,7 @@ int axis_scan(Axis *axis, Generator *gen, uint32_t period) {
 
 	return 0;
 }
+
+uint8_t axis_read_sensors(Axis *axis) {
+	return ((!!gpioRead(axis->pin_left))<<0) | ((!!gpioRead(axis->pin_right))<<1);
+}

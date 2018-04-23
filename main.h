@@ -24,9 +24,11 @@ int cnc_clear();
 
 // synchronous
 int cnc_run_task(Task *task);
+int cnc_read_sensors();
 
 // asynchronous
 int cnc_push_task(Task *task);
 int cnc_run_async();
 int cnc_is_busy();
+int cnc_wait();
 int cnc_stop();

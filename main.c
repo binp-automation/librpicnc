@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <signal.h>
 
+#include <pthread.h>
+
 #include <pigpio.h>
 
 #include "command.h"
@@ -11,6 +13,10 @@
 #include "axis.h"
 #include "device.h"
 #include "task.h"
+
+#include "ringbuffer.h"
+typedef Task* TaskPtr;
+define_ringbuffer(TaskQueue, tq, TaskPtr)
 
 #include "main.h"
 
@@ -22,26 +28,13 @@ static int initialized = 0;
 static Device device;
 static Generator generator;
 
-typedef struct {
-	Task **buffer;
-	int pos;
-	int end;
-	int length;
-} TaskQueue;
+static pthread_t thread;
+static pthread_mutex_t mutex;
+static uint8_t thread_done = 1;
 
-static TaskQueue task_queue;
+static TaskQueue *task_queue;
 #define TQLEN 0x100
 
-void _task_queue_init(TaskQueue *tq, int len) {
-	tq->buffer = malloc(sizeof(Task*)*len);
-	tq->length = len;
-	tq->pos = 0;
-	tq->end = 0;
-}
-
-void _task_queue_free(TaskQueue *tq) {
-	free(tq->buffer);
-}
 
 int cnc_init(int axes_count, AxisInfo *axes_info) {
 	printf("[ cnc ] %s\n", __func__);
@@ -58,7 +51,9 @@ int cnc_init(int axes_count, AxisInfo *axes_info) {
 
 	gen_init(&generator, 0x10);
 	dev_init(&device, axes_count);
-	_task_queue_init(&task_queue, TQLEN);
+
+	task_queue = tq_init(TQLEN);
+	pthread_mutex_init(&mutex, NULL);
 
 #ifdef DEBUG
 	printf("axes_count: %d\n", axes_count);
@@ -89,14 +84,18 @@ int cnc_quit() {
 		return 1;
 	}
 
+	cnc_stop();
+
 	int i;
 	for (i = 0; i < device.axis_count; ++i) {
 		axis_free(&device.axes[i]);
 	}
 
+	tq_free(task_queue);
+	pthread_mutex_destroy(&mutex);
+
 	dev_free(&device);
 	gen_free(&generator);
-	_task_queue_free(&task_queue);
 
 	gpioTerminate();
 
@@ -105,6 +104,7 @@ int cnc_quit() {
 }
 
 int cnc_clear() {
+	printf("[ cnc ] %s\n", __func__);
 	gen_clear(&generator);
 	dev_clear(&device);
 	return 0;
@@ -132,9 +132,13 @@ Cmd _next_cmd(int axis, void *userdata) {
 }
 
 int cnc_run_task(Task *task) {
+	printf("[ cnc ] %s\n", __func__);
 	if (task->type == TASK_NONE) {
 		// pass
 	} else if (task->type == TASK_SCAN) {
+		if (task->scan.axis < 0 || task->scan.axis >= device.axis_count) {
+			return 2;
+		}
 		Axis *axis = &device.axes[task->scan.axis];
 		axis_scan(axis, &generator, task->scan.t_ivel);
 		printf("length: %d\n", axis->length);
@@ -156,40 +160,105 @@ int cnc_run_task(Task *task) {
 	return 0;
 }
 
+int cnc_read_sensors() {
+	//printf("[ cnc ] %s\n", __func__);
+	int res = 0;
+	int i;
+	for (i = 0; i < device.axis_count; ++i) {
+		res |= (axis_read_sensors(&device.axes[i])<<(2*i));
+	}
+	return res;
+}
+
 
 // asynchronous
 
 int cnc_push_task(Task *task) {
 	printf("[ cnc ] %s\n", __func__);
 
-	TaskQueue *tq = &task_queue;
-	if (tq->end >= tq->length) {
+	pthread_mutex_lock(&mutex); /// <- LOCK MUTEX
+	if (tq_full(task_queue)) {
+		pthread_mutex_unlock(&mutex); /// <- UNLOCK MUTEX
 		printf("[error] task_queue full\n");
 		return 1;
 	}
-
-	tq->buffer[tq->end] = task;
-	tq->end += 1;
+	tq_push(task_queue, &task);
+	pthread_mutex_unlock(&mutex); /// <- UNLOCK MUTEX
 
 	return 0;
 }
 
+void *_thread_main(void *cookie) {
+	while (!thread_done) {
+		Task *task;
+		pthread_mutex_lock(&mutex); /// <- LOCK MUTEX
+		if(tq_empty(task_queue)) {
+			pthread_mutex_unlock(&mutex); /// <- UNLOCK MUTEX
+			break;
+		}
+		tq_pop(task_queue, &task);
+		pthread_mutex_unlock(&mutex); /// <- UNLOCK MUTEX
+		cnc_run_task(task);
+	}
+
+	thread_done = 1;
+	return NULL;
+}
+
 int cnc_run_async() {
-	// TODO
-	return 1;
+	printf("[ cnc ] %s\n", __func__);
+
+	if (!thread_done) {
+		return 0;
+	}
+
+	thread_done = 0;
+	int s = pthread_create(&thread, NULL, _thread_main, NULL);
+	if (s) {
+		thread_done = 1;
+		perror("pthread_create error");
+		return 1;
+	}
+
+	return 0;
 }
 
 int cnc_is_busy() {
-	// TODO
-	return 1;
+	printf("[ cnc ] %s\n", __func__);
+
+	int occ = 0;
+	pthread_mutex_lock(&mutex); /// <- LOCK MUTEX
+	occ = tq_occupancy(task_queue);
+	pthread_mutex_unlock(&mutex); /// <- UNLOCK MUTEX
+	return occ;
+}
+
+int cnc_wait() {
+	printf("[ cnc ] %s\n", __func__);
+
+	if (!thread_done) {
+		pthread_join(thread, NULL);
+	}
+	return 0;
 }
 
 int cnc_stop() {
-	// TODO
-	return 1;
+	printf("[ cnc ] %s\n", __func__);
+
+	cnc_clear();
+	cnc_wait();
+
+	while(!tq_empty(task_queue)) {
+		tq_pop(task_queue, NULL);
+	}
+
+	return 0;
 }
 
 
 int main() {
+	printf("[ cnc ] %s\n", __func__);
+	
+	printf("[info] dummy main\n");
 	return 0;
 }
