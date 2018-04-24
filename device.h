@@ -71,7 +71,7 @@ typedef struct {
 	void *userdata;
 } _AxisGetCmdCookie;
 
-Cmd _axis_get_cmd(void *userdata) {
+Cmd _dev_axis_get_cmd(void *userdata) {
 	_AxisGetCmdCookie *cookie = (_AxisGetCmdCookie*) userdata;
 	Cmd cmd = cookie->get_cmd(cookie->axis, cookie->userdata);
 	//printf("axis %d cmd %d\n", cookie->axis, cmd.type);
@@ -140,7 +140,7 @@ int _dev_run_get_wave(void *userdata) {
 				pulses[i].gpioOff = 0;
 			} else {
 				axis_cookie.axis = nax;
-				PinAction pa = axis_step(&dev->axes[nax], _axis_get_cmd, (void*) &axis_cookie);
+				PinAction pa = axis_step(&dev->axes[nax], _dev_axis_get_cmd, (void*) &axis_cookie);
 				pulses[i].gpioOn = pa.on;
 				pulses[i].gpioOff = pa.off;
 				pulses[i].usDelay = 0;

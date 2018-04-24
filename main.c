@@ -143,6 +143,13 @@ int cnc_run_task(Task *task) {
 		axis_scan(axis, &generator, task->scan.vel_ini, task->scan.vel_max, task->scan.acc_max);
 		printf("length: %d\n", axis->length);
 		task->scan.length = axis->length;
+	} else if (task->type == TASK_CALIB) {
+		if (task->scan.axis < 0 || task->scan.axis >= device.axis_count) {
+			return 2;
+		}
+		Axis *axis = &device.axes[task->calib.axis];
+		axis_calib(axis, &generator, &task->calib.vel_ini, &task->calib.vel_max, &task->calib.acc_max);
+		printf("vel_ini: %f\n", task->calib.vel_ini);
 	} else if (task->type == TASK_CMDS) {
 		_CmdsCookie cookie;
 		int i;
@@ -260,7 +267,8 @@ int cnc_stop() {
 
 int main() {
 	printf("[ cnc ] %s\n", __func__);
-	
+
 	printf("[info] dummy main\n");
+	
 	return 0;
 }

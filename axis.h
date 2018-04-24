@@ -17,7 +17,9 @@
 uint32_t isqrt(uint32_t x){
 	uint32_t op  = x;
 	uint32_t res = 0;
-	uint32_t one = 1uL << 30; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
+	// The second-to-top bit is set:
+	//use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
+	uint32_t one = 1uL << 30;
 	// "one" starts at the highest power of four <= than the argument.
 	while (one > op) {
 		one >>= 2;
@@ -239,10 +241,15 @@ typedef struct {
 	int counter;
 	gpioPulse_t *pulses;
 	int pulse_count;
-} _AxisScanCookie;
 
-void _axis_scan_alert(int gpio, int level, uint32_t tick, void *userdata) {
-	_AxisScanCookie *cookie = (_AxisScanCookie*) userdata;
+	Cmd *cmd_list;
+	int current_cmd;
+	int reuse_pulses;
+	int reuse_count;
+} _AxisCookie;
+
+void _axis_alert(int gpio, int level, uint32_t tick, void *userdata) {
+	_AxisCookie *cookie = (_AxisCookie*) userdata;
 	Axis *axis = cookie->axis;
 	Generator *gen = cookie->gen;
 	if(axis->pin_left == gpio && level) {
@@ -255,55 +262,90 @@ void _axis_scan_alert(int gpio, int level, uint32_t tick, void *userdata) {
 	}
 }
 
+Cmd _axis_get_cmd(void *userdata) {
+	_AxisCookie *cookie = (_AxisCookie*) userdata;
+	printf("current_cmd: %d\n", cookie->current_cmd);
+	return cookie->cmd_list[cookie->current_cmd++];
+}
+
 int _axis_get_wave(void *userdata) {
-	_AxisScanCookie *cookie = (_AxisScanCookie*) userdata;
+	_AxisCookie *cookie = (_AxisCookie*) userdata;
 	Axis *axis = cookie->axis;
+
 	gpioPulse_t *pulses = cookie->pulses;
 	int pulse_count = cookie->pulse_count;
 
 	int i;
-	for (i = 0; i < pulse_count - 2; ++i) {
-		PinAction pa = axis_eval_cmd(axis);
-		pulses[i].usDelay = axis->state.remain;
-		pulses[i].gpioOn =  pa.on;
-		pulses[i].gpioOff = pa.off;
+	if (!cookie->reuse_pulses) {
+		int total = 0;
+		for (i = 0; i < pulse_count - 2; ++i) {
+			if (axis->state.idle) {
+				break;
+			}
+			PinAction pa = axis_step(axis, _axis_get_cmd, userdata);
+			pulses[i].gpioOn = pa.on;
+			pulses[i].gpioOff = pa.off;
+			pulses[i].usDelay = axis->state.remain;
+			total += axis->state.remain;
+		}
+		pulse_count = i + 2;
+
+		// dummy last pulses (never executed)
+		for (i = pulse_count - 2; i < pulse_count; ++i) {
+			pulses[i].usDelay = 1;
+			pulses[i].gpioOn = 0;
+			pulses[i].gpioOff = 0;
+		}
+	} else {
+		pulse_count = cookie->reuse_count;
 	}
 
-	// dummy last pulses (never executed)
-	for (i = pulse_count - 2; i < pulse_count; ++i) {
-		pulses[i].usDelay = 1;
-		pulses[i].gpioOn = 0;
-		pulses[i].gpioOff = 0;
+	if (pulse_count <= 2) {
+		return -1;
 	}
-	
+
 	gpioWaveAddNew();
 
 	gpioWaveAddGeneric(pulse_count, pulses);
 	int wave = gpioWaveCreate();
 
-	//printf("wid: %d\n", wave);
+	if (wave < 0) {
+		cookie->reuse_pulses = 1;
+		cookie->reuse_count = pulse_count;
+	} else {
+		cookie->reuse_pulses = 0;
+	}
 
 	return wave;
 }
 
 int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float acc_max) {
 	int pulse_count = 0x100;
+	Cmd cmdbuf[0x10];
 
-	_AxisScanCookie cookie;
+	_AxisCookie cookie;
 	cookie.axis = axis;
 	cookie.gen = gen;
 	cookie.pulse_count = pulse_count;
 	cookie.pulses = (gpioPulse_t*) malloc(sizeof(gpioPulse_t)*cookie.pulse_count);
+	cookie.reuse_pulses = 0;
+	cookie.cmd_list = cmdbuf;
+
+	gpioSetAlertFuncEx(axis->pin_left, _axis_alert, (void*) &cookie);
+	gpioSetAlertFuncEx(axis->pin_right, _axis_alert, (void*) &cookie);
+
+	if (vel_max < vel_ini) {
+		vel_max = vel_ini;
+	}
 
 	float dt = (vel_max - vel_ini)/acc_max;
 	uint32_t dist_acc = (vel_ini + 0.5*acc_max*dt)*dt;
 
-	gpioSetAlertFuncEx(axis->pin_left, _axis_scan_alert, (void*) &cookie);
-	gpioSetAlertFuncEx(axis->pin_right, _axis_scan_alert, (void*) &cookie);
-
 	if (!gpioRead(axis->pin_right)) {
-		axis_set_cmd(axis, cmd_accl(1, dist_acc, 1e6/vel_ini, 1e6/vel_max));
-		axis_set_cmd(axis, cmd_move(1, 0xffffffff, 1e6/vel_max));
+		cmdbuf[0] = cmd_accl(1, dist_acc, 1e6/vel_ini, 1e6/vel_max);
+		cmdbuf[1] = cmd_move(1, 0xffffffff, 1e6/vel_max);
+		cmdbuf[2] = cmd_idle();
+		cookie.current_cmd = 0;
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		gen_clear(gen);
 		_axis_state_init(&axis->state);
@@ -314,8 +356,10 @@ int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float ac
 	cookie.counter = 0;
 	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
-		axis_set_cmd(axis, cmd_accl(0, dist_acc, 1e6/vel_ini, 1e6/vel_max));
-		axis_set_cmd(axis, cmd_move(0, 0xffffffff, 1e6/vel_max));
+		cmdbuf[0] = cmd_accl(0, dist_acc, 1e6/vel_ini, 1e6/vel_max);
+		cmdbuf[1] = cmd_move(0, 0xffffffff, 1e6/vel_max);
+		cmdbuf[2] = cmd_idle();
+		cookie.current_cmd = 0;
 		gen_run(gen, _axis_get_wave, (void*) &cookie);
 		axis->length = ((gen->counter/pulse_count)*(pulse_count - 2) + cookie.counter)/4;
 		gen_clear(gen);
@@ -323,6 +367,97 @@ int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float ac
 	}
 
 	printf("counter: %d\n", cookie.counter);
+
+	gpioSetAlertFuncEx(axis->pin_left, NULL, NULL);
+	gpioSetAlertFuncEx(axis->pin_right, NULL, NULL);
+
+	free(cookie.pulses);
+
+	return 0;
+}
+
+int axis_calib(Axis *axis, Generator *gen, float *vel_ini, float *vel_max, float *acc_max) {
+	int pulse_count = 0x100;
+	Cmd cmdbuf[0x10];
+
+	_AxisCookie cookie;
+	cookie.axis = axis;
+	cookie.gen = gen;
+	cookie.pulse_count = pulse_count;
+	cookie.pulses = (gpioPulse_t*) malloc(sizeof(gpioPulse_t)*cookie.pulse_count);
+	cookie.reuse_pulses = 0;
+	cookie.cmd_list = cmdbuf;
+
+	gpioSetAlertFuncEx(axis->pin_left, _axis_alert, (void*) &cookie);
+	gpioSetAlertFuncEx(axis->pin_right, _axis_alert, (void*) &cookie);
+
+	float vel_stable = *vel_ini;
+
+	float stable_mul = 0.5;
+	int max_depth = 4;
+
+	// test initial velocity
+	int test_dist = 500;
+	float vl = *vel_ini, vr = -1.0;
+	int depth = 0;
+	while (1) {
+		// move left if we aren't already here
+		printf("move to 0\n");
+		if (!gpioRead(axis->pin_left)) {
+			cmdbuf[0] = cmd_move(0, 0xffffffff, 1e6/vel_stable);
+			cmdbuf[1] = cmd_idle();
+			cookie.current_cmd = 0;
+			gen_run(gen, _axis_get_wave, (void*) &cookie);
+			gen_clear(gen);
+			_axis_state_init(&axis->state);
+			gpioDelay(1000);
+		}
+
+		if (depth > max_depth) {
+			break;
+		}
+
+		// move to test_dist
+		printf("move to %d\n", test_dist);
+		cmdbuf[0] = cmd_move(1, test_dist, 1e6/vel_stable);
+		cmdbuf[1] = cmd_idle();
+		cookie.current_cmd = 0;
+		gen_run(gen, _axis_get_wave, (void*) &cookie);
+		gen_clear(gen);
+		_axis_state_init(&axis->state);
+		gpioDelay(1000);
+
+		// perform binary search
+		float v;
+		if (vr < 0.0) {
+			// while we don't know vr
+			v = 2*vl;
+		} else {
+			// search between vl and vr
+			v = 0.5*(vl + vr);
+			depth += 1;
+		}
+		printf("test velocity %f\n", v);
+		cmdbuf[0] = cmd_move(0, 2*test_dist, 1e6/v);
+		cmdbuf[1] = cmd_idle();
+		cookie.current_cmd = 0;
+		gen_run(gen, _axis_get_wave, (void*) &cookie);
+		gen_clear(gen);
+		_axis_state_init(&axis->state);
+		gpioDelay(1000);
+
+		// if we had moved
+		if (gpioRead(axis->pin_left)) {
+			// acceptable speed
+			vl = v;
+			vel_stable = stable_mul*v;
+		} else {
+			// speed is too high
+			vr = v;
+		}
+	}
+
+	*vel_ini = vel_stable;
 
 	gpioSetAlertFuncEx(axis->pin_left, NULL, NULL);
 	gpioSetAlertFuncEx(axis->pin_right, NULL, NULL);
