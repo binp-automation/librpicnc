@@ -7,3 +7,5 @@
 [ ] remove MAX_AXES
 
 [ ] no direction in commands
+
+[ ] check scanned length

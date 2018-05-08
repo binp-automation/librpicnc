@@ -46,7 +46,6 @@ typedef struct {
 	int axis;
 	// inout
 	float vel_ini;
-	// out
 	float vel_max;
 	float acc_max;
 } TaskCalib;
