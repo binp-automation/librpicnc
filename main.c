@@ -10,6 +10,7 @@
 #include "command.h"
 #include "generator.h"
 #include "axis.h"
+#include "axis_task.h"
 #include "device.h"
 #include "task.h"
 
