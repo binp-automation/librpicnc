@@ -8,9 +8,11 @@
 #define CMD_WAIT       0x02
 #define CMD_SYNC       0x03
 
-#define CMD_MOVE       0x11
-#define CMD_ACCL       0x12
-#define CMD_SINE       0x13
+#define CMD_MOVE       0x10
+
+#define CMD_MOVE_VEL   0x11
+#define CMD_MOVE_ACC   0x12
+#define CMD_MOVE_SIN   0x13
 
 typedef struct {
 	
@@ -30,35 +32,38 @@ typedef struct {
 } CmdSync;
 
 typedef struct {
-	uint8_t dir;
-	uint32_t steps;
 	uint32_t period; // us
-} CmdMove;
+} CmdMoveVel;
 
 typedef struct {
-	uint8_t dir;
-	uint32_t steps;
 	uint32_t begin_period;
 	uint32_t end_period;
-} CmdAccl;
+} CmdMoveAcc;
 
 typedef struct {
-	uint8_t dir;
-	uint32_t steps;
 	uint32_t begin;
 	uint32_t size;
 	uint32_t period;
-} CmdSine;
+} CmdMoveSin;
 
 typedef struct {
-	int type;
+	uint8_t type;
+	uint8_t dir;
+	uint32_t steps;
+	union {
+		CmdMoveVel vel;
+		CmdMoveAcc acc;
+		CmdMoveSin sin;
+	};
+} CmdMove;
+
+typedef struct {
+	uint8_t type;
 	union {
 		CmdNone none;
 		CmdWait wait;
 		CmdSync sync;
 		CmdMove move;
-		CmdAccl accl;
-		CmdSine sine;
 	};
 } Cmd;
 
@@ -89,32 +94,35 @@ Cmd cmd_sync(uint32_t id, uint32_t count) {
 	return cmd;
 }
 
-Cmd cmd_move(uint8_t dir, uint32_t steps, uint32_t period) {
+Cmd cmd_move_vel(uint8_t dir, uint32_t steps, uint32_t period) {
 	Cmd cmd;
 	cmd.type = CMD_MOVE;
+	cmd.move.type = CMD_MOVE_VEL;
 	cmd.move.dir = dir;
 	cmd.move.steps = steps;
-	cmd.move.period = period;
+	cmd.move.vel.period = period;
 	return cmd;
 }
 
-Cmd cmd_accl(uint8_t dir, uint32_t steps, uint32_t begin_period, uint32_t end_period) {
+Cmd cmd_move_acc(uint8_t dir, uint32_t steps, uint32_t begin_period, uint32_t end_period) {
 	Cmd cmd;
-	cmd.type = CMD_ACCL;
-	cmd.accl.dir = dir;
-	cmd.accl.steps = steps;
-	cmd.accl.begin_period = begin_period;
-	cmd.accl.end_period = end_period;
+	cmd.type = CMD_MOVE;
+	cmd.move.type = CMD_MOVE_ACC;
+	cmd.move.dir = dir;
+	cmd.move.steps = steps;
+	cmd.move.acc.begin_period = begin_period;
+	cmd.move.acc.end_period = end_period;
 	return cmd;
 }
 
-Cmd cmd_sine(uint8_t dir, uint32_t steps, uint32_t begin, uint32_t size, uint32_t period) {
+Cmd cmd_move_sin(uint8_t dir, uint32_t steps, uint32_t begin, uint32_t size, uint32_t period) {
 	Cmd cmd;
-	cmd.type = CMD_SINE;
-	cmd.sine.dir = dir;
-	cmd.sine.steps = steps;
-	cmd.sine.begin = begin;
-	cmd.sine.size = size;
-	cmd.sine.period = period;
+	cmd.type = CMD_MOVE;
+	cmd.move.type = CMD_MOVE_SIN;
+	cmd.move.dir = dir;
+	cmd.move.steps = steps;
+	cmd.move.sin.begin = begin;
+	cmd.move.sin.size = size;
+	cmd.move.sin.period = period;
 	return cmd;
 }

@@ -15,6 +15,10 @@ typedef struct {
 	int pin_dir;
 	int pin_left;
 	int pin_right;
+
+	int position;
+	int direction;
+	int length;
 } AxisInfo;
 
 
@@ -25,6 +29,7 @@ int cnc_clear();
 // synchronous
 int cnc_run_task(Task *task);
 int cnc_read_sensors();
+int cnc_axes_info(AxisInfo *axes_info);
 
 // asynchronous
 int cnc_push_task(Task *task);

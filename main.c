@@ -150,14 +150,35 @@ int cnc_run_task(Task *task) {
 		}
 		Axis *axis = &device.axes[task->calib.axis];
 		axis_calib(axis, &generator, &task->calib.vel_ini, &task->calib.vel_max, &task->calib.acc_max);
-		printf("vel_ini: %f\n", task->calib.vel_ini);
 	} else if (task->type == TASK_CMDS) {
 		_CmdsCookie cookie;
-		int i;
+		int i, edge = 0;
 		for (i = 0; i < device.axis_count; ++i) {
 			cookie.chs[i].cmds = task->cmds.cmds[i];
 			cookie.chs[i].len = task->cmds.cmds_count[i];
 			cookie.chs[i].pos = 0;
+			
+			// check move out of bounds
+			Axis *axis = &device.axes[i];
+			int l = gpioRead(axis->pin_left), r = gpioRead(axis->pin_right);
+			if (l || r) {
+				Cmd *cmds = task->cmds.cmds[i];
+				int j, len = task->cmds.cmds_count[i];
+				for (j = 0; j < len; ++j) {
+					if (cmds[j].type == CMD_MOVE) {
+						int dir = cmds[j].move.dir;
+						if ((dir && r) || (!dir && l)) {
+							edge = 1;
+							printf("[error] out of bounds at axis:%d cmd:%d\n", i, j);
+						}
+						break;
+					}
+				}
+			}
+		}
+		if (edge) {
+			// axis will move out of bounds
+			return 2;
 		}
 		dev_run(&device, &generator, _next_cmd, (void*) &cookie);
 		cnc_clear();
@@ -176,6 +197,24 @@ int cnc_read_sensors() {
 		res |= (axis_read_sensors(&device.axes[i])<<(2*i));
 	}
 	return res;
+}
+
+int cnc_axes_info(AxisInfo *axes_info) {
+	int i;
+	for (i = 0; i < device.axis_count; ++i) {
+		AxisInfo *ai = &axes_info[i];
+		Axis *ax = &device.axes[i];
+
+		ai->pin_step  = ax->pin_step;
+		ai->pin_dir   = ax->pin_dir;
+		ai->pin_left  = ax->pin_left;
+		ai->pin_right = ax->pin_right;
+
+		ai->position  = ax->position;
+		ai->direction = ax->direction;
+		ai->length    = ax->length;
+	}
+	return 0;
 }
 
 

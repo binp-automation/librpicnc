@@ -69,7 +69,7 @@ typedef struct {
 	uint32_t remain; // us
 	uint32_t steps;
 	uint8_t phase;
-	uint8_t dir; 
+	uint8_t dir;
 } _AxisState;
 
 void _axis_state_init(_AxisState *st) {
@@ -158,14 +158,11 @@ void axis_set_cmd(Axis *axis, Cmd cmd) {
 		if (cmd.move.steps != 0) {
 			st->steps = cmd.move.steps;
 			st->dir = cmd.move.dir;
-		} else {
-			st->done = 1;
-		}
-	} else if (cmd.type == CMD_ACCL) {
-		st->remain = 0;
-		if (cmd.accl.steps != 0) {
-			st->steps = cmd.accl.steps;
-			st->dir = cmd.accl.dir;
+			if (st->dir) {
+				axis->position += st->steps;
+			} else {
+				axis->position -= st->steps;
+			}
 		} else {
 			st->done = 1;
 		}
@@ -180,18 +177,22 @@ PinAction axis_eval_cmd(Axis *axis) {
 	if (!st->idle && !st->done) {
 		uint32_t delay = 0;
 		if (st->cmd.type == CMD_MOVE) {
-			delay = st->cmd.move.period;
-		} else if (st->cmd.type == CMD_ACCL) {
-			uint64_t tb = st->cmd.accl.begin_period;
-			uint64_t te = st->cmd.accl.end_period;
-			uint64_t i = st->steps;
-			uint64_t n = st->cmd.accl.steps;
-			if (te == 0) {
-				delay = (tb*isqrt64(2*n))/isqrt64(2*i + 1);
-			} else if (tb == 0) {
-				delay = (te*isqrt64(2*n))/isqrt64(2*n - 2*i - 1);
+			if (st->cmd.move.type == CMD_MOVE_VEL) {
+				delay = st->cmd.move.vel.period;
+			} else if (st->cmd.move.type == CMD_MOVE_ACC) {
+				uint64_t tb = st->cmd.move.acc.begin_period;
+				uint64_t te = st->cmd.move.acc.end_period;
+				uint64_t i = st->steps;
+				uint64_t n = st->cmd.move.steps;
+				if (te == 0) {
+					delay = (tb*isqrt64(2*n))/isqrt64(2*i + 1);
+				} else if (tb == 0) {
+					delay = (te*isqrt64(2*n))/isqrt64(2*n - 2*i - 1);
+				} else {
+					delay = (tb*te*isqrt64(2*n))/isqrt64(tb*tb*(2*n - 2*i - 1) + te*te*(2*i + 1));
+				}
 			} else {
-				delay = (tb*te*isqrt64(2*n))/isqrt64(tb*tb*(2*n - 2*i - 1) + te*te*(2*i + 1));
+				st->done = 1;
 			}
 		} else {
 			st->done = 1;

@@ -9,3 +9,4 @@
 [ ] no direction in commands
 
 [ ] check scanned length
+[+] refactor commands (group moving cmds)

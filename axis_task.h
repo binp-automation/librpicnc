@@ -97,7 +97,7 @@ int _gen_eval(_AxisCookie *cookie) {
 }
 
 int _axis_move(_AxisCookie *cookie, uint8_t dir, uint32_t dist, float vel) {
-	cookie->cmd_list[0] = cmd_move(dir, dist, 1e6/vel);
+	cookie->cmd_list[0] = cmd_move_vel(dir, dist, 1e6/vel);
 	cookie->cmd_list[1] = cmd_idle();
 	cookie->current_cmd = 0;
 	_gen_eval(cookie);
@@ -111,15 +111,15 @@ int _axis_move_acc(
 	float dt = (vel_max - vel_ini)/acc_max;
 	uint32_t acc_dist = (vel_ini + 0.5*acc_max*dt)*dt;
 	if (2*acc_dist < dist) {
-		cookie->cmd_list[0] = cmd_accl(dir, acc_dist, vel_ini < 1.0 ? 0 : 1e6/vel_ini, 1e6/vel_max);
-		cookie->cmd_list[1] = cmd_move(dir, dist - 2*acc_dist, 1e6/vel_max);
-		cookie->cmd_list[2] = cmd_accl(dir, acc_dist, 1e6/vel_max, vel_ini < 1.0 ? 0 : 1e6/vel_ini);
+		cookie->cmd_list[0] = cmd_move_acc(dir, acc_dist, vel_ini < 1.0 ? 0 : 1e6/vel_ini, 1e6/vel_max);
+		cookie->cmd_list[1] = cmd_move_vel(dir, dist - 2*acc_dist, 1e6/vel_max);
+		cookie->cmd_list[2] = cmd_move_acc(dir, acc_dist, 1e6/vel_max, vel_ini < 1.0 ? 0 : 1e6/vel_ini);
 		cookie->cmd_list[3] = cmd_idle();
 	} else {
 		acc_dist = dist/2;
 		float vel_max_red = sqrt(vel_ini*vel_ini + 2.0*acc_max*acc_dist);
-		cookie->cmd_list[0] = cmd_accl(dir, acc_dist, vel_ini < 1.0 ? 0 : 1e6/vel_ini, 1e6/vel_max_red);
-		cookie->cmd_list[1] = cmd_accl(dir, acc_dist + (dist%2), 1e6/vel_max_red, vel_ini < 1.0 ? 0 : 1e6/vel_ini);
+		cookie->cmd_list[0] = cmd_move_acc(dir, acc_dist, vel_ini < 1.0 ? 0 : 1e6/vel_ini, 1e6/vel_max_red);
+		cookie->cmd_list[1] = cmd_move_acc(dir, acc_dist + (dist%2), 1e6/vel_max_red, vel_ini < 1.0 ? 0 : 1e6/vel_ini);
 		cookie->cmd_list[2] = cmd_idle();
 	}
 	cookie->current_cmd = 0;
@@ -133,8 +133,8 @@ int _axis_move_acc_end(
 ) {
 	float dt = (vel_max - vel_ini)/acc_max;
 	uint32_t acc_dist = (vel_ini + 0.5*acc_max*dt)*dt;
-	cookie->cmd_list[0] = cmd_accl(dir, acc_dist, vel_ini < 1.0 ? 0 : 1e6/vel_ini, 1e6/vel_max);
-	cookie->cmd_list[1] = cmd_move(dir, vel_dist, 1e6/vel_max);
+	cookie->cmd_list[0] = cmd_move_acc(dir, acc_dist, vel_ini < 1.0 ? 0 : 1e6/vel_ini, 1e6/vel_max);
+	cookie->cmd_list[1] = cmd_move_vel(dir, vel_dist, 1e6/vel_max);
 	cookie->cmd_list[2] = cmd_idle();
 	cookie->current_cmd = 0;
 	_gen_eval(cookie);
@@ -170,6 +170,7 @@ int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float ac
 		_axis_move_acc_end(&cookie, 0, 0xffffffff, vel_ini, vel_max, acc_max);
 		axis->length = ((gen->counter/pulse_count)*(pulse_count - 2) + cookie.counter)/4;
 	}
+	axis->position = 0;
 
 	printf("counter: %d\n", cookie.counter);
 
@@ -207,7 +208,7 @@ int axis_calib(Axis *axis, Generator *gen, float *vel_ini, float *vel_max, float
 	if (*vel_ini < 1.0) {
 		*vel_ini = 1.0;
 	}
-	int test_dist = 1000;
+	int test_dist = 100;
 	int depth = 0;
 	float vl = *vel_ini, vr = -1.0;
 	while (depth <= max_depth) {
@@ -351,6 +352,12 @@ int axis_calib(Axis *axis, Generator *gen, float *vel_ini, float *vel_max, float
 
 	*vel_max = vel_acc_stable;
 	*acc_max = acc_stable;
+
+	// move to 0
+	if (!gpioRead(axis->pin_left)) {
+		_axis_move_acc_end(&cookie, 0, 0xffffffff, *vel_ini, *vel_max, *acc_max);
+	}
+	axis->position = 0;
 
 	gpioSetAlertFuncEx(axis->pin_left, NULL, NULL);
 	gpioSetAlertFuncEx(axis->pin_right, NULL, NULL);

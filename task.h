@@ -8,10 +8,7 @@
 #define TASK_NONE    0x00
 #define TASK_SCAN    0x01
 #define TASK_CALIB   0x02
-
 #define TASK_CMDS    0x10
-#define TASK_GCODE   0x11
-#define TASK_CURVE   0x12
 
 // task status
 #define TS_NONE 0x00
@@ -58,17 +55,6 @@ typedef struct {
 	int cmds_done[MAX_AXES];
 } TaskCmds;
 
-// TODO
-typedef struct {
-	// in
-	// out
-} TaskGCode;
-
-// TODO
-typedef struct {
-	// in
-	// out
-} TaskCurve;
 
 typedef struct {
 	int type;
@@ -77,8 +63,6 @@ typedef struct {
 		TaskScan    scan;
 		TaskCalib   calib;
 		TaskCmds    cmds;
-		TaskGCode   gcode;
-		TaskCurve   curve;
 	};
 	// out
 	int status;
