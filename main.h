@@ -17,7 +17,6 @@ typedef struct {
 	int pin_right;
 
 	int position;
-	int direction;
 	int length;
 } AxisInfo;
 

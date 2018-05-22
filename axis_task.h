@@ -168,7 +168,7 @@ int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float ac
 	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
 		_axis_move_acc_end(&cookie, 0, 0xffffffff, vel_ini, vel_max, acc_max);
-		axis->length = ((gen->counter/pulse_count)*(pulse_count - 2) + cookie.counter)/4;
+		axis->length = (((gen->counter*(pulse_count - 2))/pulse_count + cookie.counter)*3)/(4*4);
 	}
 	axis->position = 0;
 

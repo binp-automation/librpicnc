@@ -67,6 +67,8 @@ int cnc_init(int axes_count, AxisInfo *axes_info) {
 			ai->pin_step, ai->pin_dir,
 			ai->pin_left, ai->pin_right
 		);
+		device.axes[i].position = ai->position;
+		device.axes[i].length = ai->length;
 #ifdef DEBUG
 		printf("axis[%d]: s:%d. d:%d, l:%d, r:%d\n", i, ai->pin_step, ai->pin_dir, ai->pin_left, ai->pin_right);
 #endif /* DEBUG */
@@ -153,26 +155,28 @@ int cnc_run_task(Task *task) {
 	} else if (task->type == TASK_CMDS) {
 		_CmdsCookie cookie;
 		int i, edge = 0;
+		int axpos[MAX_AXES];
 		for (i = 0; i < device.axis_count; ++i) {
 			cookie.chs[i].cmds = task->cmds.cmds[i];
 			cookie.chs[i].len = task->cmds.cmds_count[i];
 			cookie.chs[i].pos = 0;
 			
-			// check move out of bounds
 			Axis *axis = &device.axes[i];
+			axpos[i] = 0;
+			int first = 1;
 			int l = gpioRead(axis->pin_left), r = gpioRead(axis->pin_right);
-			if (l || r) {
-				Cmd *cmds = task->cmds.cmds[i];
-				int j, len = task->cmds.cmds_count[i];
-				for (j = 0; j < len; ++j) {
-					if (cmds[j].type == CMD_MOVE) {
-						int dir = cmds[j].move.dir;
-						if ((dir && r) || (!dir && l)) {
-							edge = 1;
-							printf("[error] out of bounds at axis:%d cmd:%d\n", i, j);
-						}
-						break;
+			Cmd *cmds = task->cmds.cmds[i];
+			int j;
+			int len = task->cmds.cmds_count[i];
+			for (j = 0; j < len; ++j) {
+				if (cmds[j].type == CMD_MOVE) {
+					int dir = cmds[j].move.dir;
+					if (first && ((dir && r) || (!dir && l))) {
+						edge = 1;
+						printf("[error] out of bounds at axis:%d cmd:%d\n", i, j);
 					}
+					first = 0;
+					axpos[i] += cmds[j].move.steps*(dir ? 1 : -1);
 				}
 			}
 		}
@@ -180,12 +184,25 @@ int cnc_run_task(Task *task) {
 			// axis will move out of bounds
 			return 2;
 		}
+
 		dev_run(&device, &generator, _next_cmd, (void*) &cookie);
 		cnc_clear();
+
+		for (i = 0; i < device.axis_count; ++i) {
+			Axis *axis = &device.axes[i];
+			axis->position += axpos[i];
+			if (gpioRead(axis->pin_right)) {
+				axis->position = axis->length;
+			}
+			if (gpioRead(axis->pin_left)) {
+				axis->position = 0;
+			}
+		}
 	} else {
 		// unknown task type
 		return 1;
 	}
+	gpioDelay(10000); //us
 	return 0;
 }
 
@@ -211,7 +228,6 @@ int cnc_axes_info(AxisInfo *axes_info) {
 		ai->pin_right = ax->pin_right;
 
 		ai->position  = ax->position;
-		ai->direction = ax->direction;
 		ai->length    = ax->length;
 	}
 	return 0;

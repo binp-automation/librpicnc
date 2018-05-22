@@ -58,8 +58,7 @@ uint64_t isqrt64(uint64_t x){
 
 
 #define MAX_DELAY 1000000 // us
-#define POST_DELAY 1000 // us
-#define REDIR_DELAY 1000 // us
+#define REDIR_DELAY 100 // us
 
 
 typedef struct {
@@ -101,7 +100,6 @@ typedef struct Axis {
 	// location
 	uint32_t length;
 	int32_t position;
-	int direction;
 	
 	// current state
 	_AxisState state;
@@ -114,7 +112,6 @@ int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	axis->pin_right = right;
 	
 	axis->position = 0;
-	axis->direction = 0;
 	axis->length = 0;
 	
 	_axis_state_init(&axis->state);
@@ -157,12 +154,7 @@ void axis_set_cmd(Axis *axis, Cmd cmd) {
 		st->remain = 0;
 		if (cmd.move.steps != 0) {
 			st->steps = cmd.move.steps;
-			st->dir = cmd.move.dir;
-			if (st->dir) {
-				axis->position += st->steps;
-			} else {
-				axis->position -= st->steps;
-			}
+			st->dir = 0;
 		} else {
 			st->done = 1;
 		}
@@ -203,15 +195,14 @@ PinAction axis_eval_cmd(Axis *axis) {
 		}
 
 		if (!st->done) {
-			if (st->dir != axis->direction) {
-				if (st->dir) {
+			if (!st->dir) {
+				if (st->cmd.move.dir) {
 					pa.on = 1 << axis->pin_dir;
-					axis->direction = 1;
 				} else {
 					pa.off = 1 << axis->pin_dir;
-					axis->direction = 0;
 				}
 				st->remain = REDIR_DELAY;
+				st->dir = 1;
 			} else {
 				if (st->steps > 0) {
 					if (st->phase == 0) {
