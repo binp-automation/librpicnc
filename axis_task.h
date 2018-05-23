@@ -168,7 +168,7 @@ int axis_scan(Axis *axis, Generator *gen, float vel_ini, float vel_max, float ac
 	if(!gpioRead(axis->pin_left)) {
 		gen->counter = 0;
 		_axis_move_acc_end(&cookie, 0, 0xffffffff, vel_ini, vel_max, acc_max);
-		axis->length = (((gen->counter*(pulse_count - 2))/pulse_count + cookie.counter)*3)/(4*4);
+		axis->length = ((gen->counter*(pulse_count - 2))/pulse_count + cookie.counter)/4 - 2100; // Why 2100?
 	}
 	axis->position = 0;
 
@@ -199,8 +199,8 @@ int axis_calib(Axis *axis, Generator *gen, float *vel_ini, float *vel_max, float
 
 	float stable_mul = 0.75;
 	float acc_vel_factor = 0.95;
-	int max_depth = 4;
-	int attemts = 4;
+	int max_depth = 3;
+	int attemts = 3;
 
 	float vel_stable = *vel_ini;
 
