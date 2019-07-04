@@ -4,10 +4,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "device.h"
-#include "generator.h"
-#include "command.h"
-#include "task.h"
+#include <device.h>
+#include <generator.h>
+#include <command.h>
+#include <task.h>
 
 
 typedef struct {

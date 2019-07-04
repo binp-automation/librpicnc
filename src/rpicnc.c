@@ -14,11 +14,13 @@
 #include "device.h"
 #include "task.h"
 
+
 #include "ringbuffer.h"
 typedef Task* TaskPtr;
-define_ringbuffer(TaskQueue, tq, TaskPtr)
+ringbuffer_declare(TaskQueue, tq, TaskPtr)
+ringbuffer_define(TaskQueue, tq, TaskPtr)
 
-#include "main.h"
+#include "rpicnc.h"
 
 #define DEBUG
 
@@ -317,14 +319,5 @@ int cnc_stop() {
 		tq_pop(task_queue, NULL);
 	}
 
-	return 0;
-}
-
-
-int main() {
-	printf("[ cnc ] %s\n", __func__);
-
-	printf("[info] dummy main\n");
-	
 	return 0;
 }

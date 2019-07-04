@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define define_ringbuffer(name, pref, type)\
+
+#define ringbuffer_declare(name, pref, type)\
 	typedef struct {\
 		int size;\
 		int head, tail;\
@@ -12,6 +13,21 @@
 	} name;\
 \
 \
+	name *pref##_init(int size);\
+	void pref##_free(name *rb);\
+\
+	type *pref##_head(name *rb);\
+	type *pref##_tail(name *rb);\
+\
+	int pref##_occupancy(const name *rb);\
+	int pref##_empty(const name *rb);\
+	int pref##_full(const name *rb);\
+\
+	int pref##_push(name *rb, const type *data);\
+	int pref##_pop(name *rb, type *data);\
+
+
+#define ringbuffer_define(name, pref, type)\
 	name *pref##_init(int size) {\
 		if (size <= 0) {\
 			goto err_size;\

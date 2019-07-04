@@ -1,23 +1,6 @@
-#pragma once
+#include "axis_task.h"
 
-#include "axis.h"
-
-
-typedef struct {
-	Axis *axis;
-	Generator *gen;
-	int counter;
-	gpioPulse_t *pulses;
-	int pulse_count;
-
-	Cmd *cmd_list;
-	int current_cmd;
-	int reuse_pulses;
-	int reuse_count;
-} _AxisCookie;
-
-
-void _axis_alert(int gpio, int level, uint32_t tick, void *userdata) {
+static void _axis_alert(int gpio, int level, uint32_t tick, void *userdata) {
 	_AxisCookie *cookie = (_AxisCookie*) userdata;
 	Axis *axis = cookie->axis;
 	Generator *gen = cookie->gen;
@@ -31,13 +14,13 @@ void _axis_alert(int gpio, int level, uint32_t tick, void *userdata) {
 	}
 }
 
-Cmd _axis_get_cmd(void *userdata) {
+static Cmd _axis_get_cmd(void *userdata) {
 	_AxisCookie *cookie = (_AxisCookie*) userdata;
 	//printf("current_cmd: %d\n", cookie->current_cmd);
 	return cookie->cmd_list[cookie->current_cmd++];
 }
 
-int _axis_get_wave(void *userdata) {
+static int _axis_get_wave(void *userdata) {
 	_AxisCookie *cookie = (_AxisCookie*) userdata;
 	Axis *axis = cookie->axis;
 
@@ -88,7 +71,7 @@ int _axis_get_wave(void *userdata) {
 	return wave;
 }
 
-int _gen_eval(_AxisCookie *cookie) {
+static int _gen_eval(_AxisCookie *cookie) {
 	gen_run(cookie->gen, _axis_get_wave, (void*) cookie);
 	gen_clear(cookie->gen);
 	_axis_state_init(&cookie->axis->state);
@@ -96,7 +79,7 @@ int _gen_eval(_AxisCookie *cookie) {
 	return 0;
 }
 
-int _axis_move(_AxisCookie *cookie, uint8_t dir, uint32_t dist, float vel) {
+static int _axis_move(_AxisCookie *cookie, uint8_t dir, uint32_t dist, float vel) {
 	cookie->cmd_list[0] = cmd_move_vel(dir, dist, 1e6/vel);
 	cookie->cmd_list[1] = cmd_idle();
 	cookie->current_cmd = 0;
@@ -104,7 +87,7 @@ int _axis_move(_AxisCookie *cookie, uint8_t dir, uint32_t dist, float vel) {
 	return 0;
 }
 
-int _axis_move_acc(
+static int _axis_move_acc(
 	_AxisCookie *cookie, uint8_t dir, uint32_t dist, 
 	float vel_ini, float vel_max, float acc_max
 ) {
@@ -127,7 +110,7 @@ int _axis_move_acc(
 	return 0;
 }
 
-int _axis_move_acc_end(
+static int _axis_move_acc_end(
 	_AxisCookie *cookie, uint8_t dir, uint32_t vel_dist, 
 	float vel_ini, float vel_max, float acc_max
 ) {

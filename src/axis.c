@@ -1,4 +1,4 @@
-#pragma once
+#include <axis.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,13 +8,13 @@
 
 #include <pigpio.h>
 
-#include "command.h"
-#include "generator.h"
+#include <command.h>
+#include <generator.h>
 
 
 #define sqr(x) ((x)*(x))
 
-uint32_t isqrt(uint32_t x){
+static uint32_t isqrt(uint32_t x){
 	uint32_t op  = x;
 	uint32_t res = 0;
 	// The second-to-top bit is set:
@@ -35,7 +35,7 @@ uint32_t isqrt(uint32_t x){
 	return res;
 }
 
-uint64_t isqrt64(uint64_t x){
+static uint64_t isqrt64(uint64_t x){
 	uint64_t op  = x;
 	uint64_t res = 0;
 	// The second-to-top bit is set: 
@@ -61,16 +61,6 @@ uint64_t isqrt64(uint64_t x){
 #define REDIR_DELAY 100 // us
 
 
-typedef struct {
-	int idle;
-	int done;
-	Cmd cmd;
-	uint32_t remain; // us
-	uint32_t steps;
-	uint8_t phase;
-	uint8_t dir;
-} _AxisState;
-
 void _axis_state_init(_AxisState *st) {
 	st->idle = 0;
 	st->done = 1;
@@ -78,32 +68,12 @@ void _axis_state_init(_AxisState *st) {
 	st->remain = 0;
 }
 
-typedef struct {
-	uint32_t on;
-	uint32_t off;
-} PinAction;
-
 PinAction new_pin_action() {
 	PinAction pa;
 	pa.on = 0;
 	pa.off = 0;
 	return pa;
 }
-
-typedef struct Axis {
-	// gpio pins
-	int pin_step;
-	int pin_dir;
-	int pin_left;
-	int pin_right;
-	
-	// location
-	uint32_t length;
-	int32_t position;
-	
-	// current state
-	_AxisState state;
-} Axis;
 
 int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	axis->pin_step  = step;

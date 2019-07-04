@@ -1,4 +1,4 @@
-#pragma once
+#include <generator.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,19 +9,9 @@
 
 #include <pigpio.h>
 
-#include "ringbuffer.h"
-define_ringbuffer(RB, rb, int)
 
-#define GEN_DELAY 10000 // us
+ringbuffer_define(RB, rb, int)
 
-typedef struct {
-	RB *wavebuf;
-	int current;
-	int counter;
-	int run;
-} Generator;
-
-int gen_clear(Generator *gen);
 
 int gen_init(Generator *gen, int bufsize) {
 	gen->wavebuf = rb_init(bufsize);
@@ -44,7 +34,7 @@ int gen_free(Generator *gen) {
 	return 0;
 }
 
-void _gen_pop_waves(Generator *gen) {
+static void _gen_pop_waves(Generator *gen) {
 	while(!rb_empty(gen->wavebuf) && (*((int*) rb_tail(gen->wavebuf))) != gen->current) {
 		int wave;
 		rb_pop(gen->wavebuf, &wave);
@@ -55,7 +45,7 @@ void _gen_pop_waves(Generator *gen) {
 	}
 }
 
-void _gen_push_wave(Generator *gen, int wave) {
+static void _gen_push_wave(Generator *gen, int wave) {
 	if (wave < 0) {
 		return;
 	}

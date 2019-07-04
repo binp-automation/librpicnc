@@ -1,37 +1,50 @@
-BUILD_DIR=build
+BD=build
 
-HEADERS=pigpio/pigpio.h ringbuffer.h command.h generator.h axis.h axis_task.h device.h main.h task.h
-BIN=$(BUILD_DIR)/cnc
-LIB=$(BUILD_DIR)/cnc.so
+HEADERS=ringbuffer.h command.h generator.h axis.h axis_task.h device.h rpicnc.h task.h
+SRCS=command.c generator.c axis.c axis_task.c device.c rpicnc.c
+OBJS=$(SRCS:%=$(BD)/%.o)
+LIB=$(BD)/rpicnc.so
+EXAMPLES=simple.c
 
-CF=-g -Wall -Ipigpio -fPIC
-LF=-lm -pthread -L$(BUILD_DIR)/pigpio/
-PIGPIO_OBJS=$(BUILD_DIR)/pigpio/command.o $(BUILD_DIR)/pigpio/pigpio.o
+CF=-g -Wall -I. -Iinclude -fPIC
+LF=-lm -pthread -L$(BD)/pigpio/
+PIGPIO_OBJS=$(BD)/pigpio/command.o $(BD)/pigpio/pigpio.o
 
-.PHONY: all clean dirs cnc pigpio
+.PHONY: all clean dirs pigpio rpicnc examples
 
-all: dirs pigpio cnc
-
-cnc: $(BIN) $(LIB)
-
-$(BIN): $(BUILD_DIR)/main.o $(PIGPIO_OBJS)
-	gcc ${LF} $^ -o $@
-
-$(LIB): $(BUILD_DIR)/main.o $(PIGPIO_OBJS)
-	gcc ${LF} $^ -shared -o $@
-
-$(BUILD_DIR)/main.o: main.c $(HEADERS)
-	gcc ${CF} -c $< -o $@
-
-dirs:
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(BUILD_DIR)/pigpio
-
-pigpio:
-	cd pigpio; make lib
-	cp pigpio/libpigpio.so ./$(BUILD_DIR)/pigpio/
-	cp pigpio/command.o pigpio/pigpio.o ./$(BUILD_DIR)/pigpio/
+all: dirs pigpio rpicnc examples
 
 clean: 
 	cd pigpio; make clean
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BD)
+
+dirs:
+	mkdir -p $(BD)
+	mkdir -p $(BD)/pigpio
+	mkdir -p $(BD)/examples
+
+pigpio:
+	cd pigpio; make lib
+	cp pigpio/libpigpio.so $(BD)/pigpio/
+	cp pigpio/command.o pigpio/pigpio.o $(BD)/pigpio/
+
+$(PIGPIO_OBJS): %: pigpio
+
+
+
+rpicnc: $(LIB)
+
+$(LIB): $(OBJS) $(PIGPIO_OBJS)
+	gcc ${LF} $^ -shared -o $@
+
+$(SRCS:%=$(BD)/%.o): $(BD)/%.o: src/% $(HEADERS:%=include/%)
+	gcc ${CF} -c $< -o $@
+
+
+examples: $(EXAMPLES:%.c=$(BD)/examples/%)
+
+$(EXAMPLES:%=$(BD)/examples/%.o): $(BD)/examples/%.o: examples/% $(HEADERS:%=include/%)
+	gcc ${CF} -c -I. $< -o $@
+
+$(EXAMPLES:%.c=$(BD)/examples/%): %: %.c.o $(OBJS) $(PIGPIO_OBJS)
+	gcc ${LF} $^ -o $@

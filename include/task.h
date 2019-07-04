@@ -1,8 +1,8 @@
 #pragma once
 
 
-#include "device.h"
-#include "command.h"
+#include <device.h>
+#include <command.h>
 
 
 #define TASK_NONE    0x00

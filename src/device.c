@@ -1,26 +1,19 @@
-#pragma once
+#include <device.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <unistd.h>
 #include <signal.h>
 
 #include <pigpio.h>
 
-#include "generator.h"
-#include "command.h"
+#include <generator.h>
+#include <command.h>
+#include <axis.h>
 
-#include "ringbuffer.h"
-define_ringbuffer(RBC, rbc, Cmd)
 
-#define MAX_AXES 8
-#define SYNC_MAP_SIZE MAX_AXES
+ringbuffer_define(RBC, rbc, Cmd)
 
-typedef struct {
-	Axis axes[MAX_AXES];
-	int axis_count;
-} Device;
 
 int dev_init(Device *dev, int axis_count) {
 	dev->axis_count = axis_count;
@@ -49,7 +42,7 @@ typedef struct {
 	_SyncMapEntry sync_map[SYNC_MAP_SIZE];
 } _DevRunCookie;
 
-void _dev_run_alert(int gpio, int level, uint32_t tick, void *userdata) {
+static void _dev_run_alert(int gpio, int level, uint32_t tick, void *userdata) {
 	_DevRunCookie *cookie = (_DevRunCookie*) userdata;
 	Device *dev = cookie->dev;
 	Generator *gen = cookie->gen;
@@ -71,14 +64,14 @@ typedef struct {
 	void *userdata;
 } _AxisGetCmdCookie;
 
-Cmd _dev_axis_get_cmd(void *userdata) {
+static Cmd _dev_axis_get_cmd(void *userdata) {
 	_AxisGetCmdCookie *cookie = (_AxisGetCmdCookie*) userdata;
 	Cmd cmd = cookie->get_cmd(cookie->axis, cookie->userdata);
 	//printf("axis %d cmd %d\n", cookie->axis, cmd.type);
 	return cmd;
 }
 
-int _dev_run_get_wave(void *userdata) {
+static int _dev_run_get_wave(void *userdata) {
 	_DevRunCookie *cookie = (_DevRunCookie*) userdata;
 	Device *dev = cookie->dev;
 
