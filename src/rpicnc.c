@@ -66,13 +66,17 @@ int cnc_init(int axes_count, AxisInfo *axes_info) {
 		AxisInfo *ai = &axes_info[i];
 		axis_init(
 			&device.axes[i],
-			ai->pin_step, ai->pin_dir,
-			ai->pin_left, ai->pin_right
+			ai->mask_step_pos, ai->mask_step_neg,
+			ai->mask_dir_pos, ai->mask_dir_neg,
+			ai->sense, ai->pin_left, ai->pin_right
 		);
 		device.axes[i].position = ai->position;
 		device.axes[i].length = ai->length;
 #ifdef DEBUG
-		printf("axis[%d]: s:%d. d:%d, l:%d, r:%d\n", i, ai->pin_step, ai->pin_dir, ai->pin_left, ai->pin_right);
+		printf("axis[%d]:\n", i);
+		printf("\tstep: (%08x, %08x),\n", ai->mask_step_pos, ai->mask_step_neg);
+		printf("\tdir:  (%08x, %08x),\n", ai->mask_dir_pos, ai->mask_dir_neg);
+		printf("\tsense: %d, left: %d, right: %d\n", ai->sense, ai->pin_left, ai->pin_right);
 #endif /* DEBUG */
 	}
 
@@ -166,14 +170,18 @@ int cnc_run_task(Task *task) {
 			Axis *axis = &device.axes[i];
 			axpos[i] = 0;
 			int first = 1;
-			int l = gpioRead(axis->pin_left), r = gpioRead(axis->pin_right);
+			int l = 0, r = 0;
+			if (axis->sense) {
+				l = gpioRead(axis->pin_left);
+				r = gpioRead(axis->pin_right);
+			}
 			Cmd *cmds = task->cmds.cmds[i];
 			int j;
 			int len = task->cmds.cmds_count[i];
 			for (j = 0; j < len; ++j) {
 				if (cmds[j].type == CMD_MOVE) {
 					int dir = cmds[j].move.dir;
-					if (first && ((dir && r) || (!dir && l))) {
+					if (axis->sense && first && ((dir && r) || (!dir && l))) {
 						edge = 1;
 						printf("[error] out of bounds at axis:%d cmd:%d\n", i, j);
 					}
@@ -224,8 +232,11 @@ int cnc_axes_info(AxisInfo *axes_info) {
 		AxisInfo *ai = &axes_info[i];
 		Axis *ax = &device.axes[i];
 
-		ai->pin_step  = ax->pin_step;
-		ai->pin_dir   = ax->pin_dir;
+		ai->mask_step_pos  = ax->mask_step_pos;
+		ai->mask_step_neg  = ax->mask_step_neg;
+		ai->mask_dir_pos   = ax->mask_dir_pos;
+		ai->mask_dir_neg   = ax->mask_dir_neg;
+		ai->sense  = ax->sense;
 		ai->pin_left  = ax->pin_left;
 		ai->pin_right = ax->pin_right;
 

@@ -75,9 +75,18 @@ PinAction new_pin_action() {
 	return pa;
 }
 
-int axis_init(Axis *axis, int step, int dir, int left, int right) {
-	axis->pin_step  = step;
-	axis->pin_dir   = dir;
+int axis_init(
+	Axis *axis,
+	uint32_t mask_step_pos, uint32_t mask_step_neg,
+	uint32_t mask_dir_pos, uint32_t mask_dir_neg,
+	int sense, uint32_t left, uint32_t right
+) {
+	axis->mask_step_pos  = mask_step_pos;
+	axis->mask_step_neg  = mask_step_neg;
+	axis->mask_dir_pos   = mask_dir_pos;
+	axis->mask_dir_neg   = mask_dir_neg;
+
+	axis->sense = sense;
 	axis->pin_left  = left;
 	axis->pin_right = right;
 	
@@ -86,20 +95,42 @@ int axis_init(Axis *axis, int step, int dir, int left, int right) {
 	
 	_axis_state_init(&axis->state);
 
-	gpioSetMode(axis->pin_step, PI_OUTPUT);
-	gpioSetMode(axis->pin_dir,  PI_OUTPUT);
-	gpioSetMode(axis->pin_left,  PI_INPUT);
-	gpioSetMode(axis->pin_right, PI_INPUT);
+	uint32_t i = 0;
+	for (i = 0; i < 32; ++i) {
+		if (
+			((1<<i) & axis->mask_step_pos) ||
+			((1<<i) & axis->mask_step_neg) ||
+			((1<<i) & axis->mask_dir_pos) ||
+			((1<<i) & axis->mask_dir_neg)
+		) {
+			gpioSetMode(i, PI_OUTPUT);
+		}
+	}
+	if (sense) {
+		gpioSetMode(axis->pin_left,  PI_INPUT);
+		gpioSetMode(axis->pin_right, PI_INPUT);
+	}
 	
 	return 0;
 }
 
 int axis_free(Axis *axis) {
 	if (axis) {
-		gpioSetMode(axis->pin_step, PI_INPUT);
-		gpioSetMode(axis->pin_dir,  PI_INPUT);
-		gpioSetMode(axis->pin_left,  PI_INPUT);
-		gpioSetMode(axis->pin_right, PI_INPUT);
+		uint32_t i = 0;
+		for (i = 0; i < 32; ++i) {
+			if (
+				((1<<i) & axis->mask_step_pos) ||
+				((1<<i) & axis->mask_step_neg) ||
+				((1<<i) & axis->mask_dir_pos) ||
+				((1<<i) & axis->mask_dir_neg)
+			) {
+				gpioSetMode(i, PI_INPUT);
+			}
+		}
+		if (axis->sense) {
+			gpioSetMode(axis->pin_left,  PI_INPUT);
+			gpioSetMode(axis->pin_right, PI_INPUT);
+		}
 		return 0;
 	}
 	return 1;
@@ -167,20 +198,24 @@ PinAction axis_eval_cmd(Axis *axis) {
 		if (!st->done) {
 			if (!st->dir) {
 				if (st->cmd.move.dir) {
-					pa.on = 1 << axis->pin_dir;
+					pa.on = axis->mask_dir_pos;
+					pa.off = axis->mask_dir_neg;
 				} else {
-					pa.off = 1 << axis->pin_dir;
+					pa.off = axis->mask_dir_pos;
+					pa.on = axis->mask_dir_neg;
 				}
 				st->remain = REDIR_DELAY;
 				st->dir = 1;
 			} else {
 				if (st->steps > 0) {
 					if (st->phase == 0) {
-						pa.on = 1 << axis->pin_step;
+						pa.on = axis->mask_step_pos;
+						pa.off = axis->mask_step_neg;
 						st->remain = delay/2;
 						st->phase = 1;
 					} else {
-						pa.off = 1 << axis->pin_step;
+						pa.off = axis->mask_step_pos;
+						pa.on = axis->mask_step_pos;
 						st->remain = delay/2 + (delay % 2);
 						st->phase = 0;
 						st->steps -= 1;
@@ -192,6 +227,7 @@ PinAction axis_eval_cmd(Axis *axis) {
 			}
 		}
 	}
+	//printf("pa: %08x\n", pa);
 	return pa;
 }
 

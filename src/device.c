@@ -197,15 +197,19 @@ int dev_run(Device *dev, Generator *gen, Cmd (*get_cmd)(int axis, void *userdata
 	}
 
 	for (i = 0; i < dev->axis_count; ++i) {
-		gpioSetAlertFuncEx(dev->axes[i].pin_left, _dev_run_alert, (void*) &cookie);
-		gpioSetAlertFuncEx(dev->axes[i].pin_right, _dev_run_alert, (void*) &cookie);
+		if (dev->axes[i].sense) {
+			gpioSetAlertFuncEx(dev->axes[i].pin_left, _dev_run_alert, (void*) &cookie);
+			gpioSetAlertFuncEx(dev->axes[i].pin_right, _dev_run_alert, (void*) &cookie);
+		}
 	}
 
 	gen_run(gen, _dev_run_get_wave, (void*) &cookie);
 	
 	for (i = 0; i < dev->axis_count; ++i) {
-		gpioSetAlertFuncEx(dev->axes[i].pin_left, NULL, NULL);
-		gpioSetAlertFuncEx(dev->axes[i].pin_right, NULL, NULL);
+		if (dev->axes[i].sense) {
+			gpioSetAlertFuncEx(dev->axes[i].pin_left, NULL, NULL);
+			gpioSetAlertFuncEx(dev->axes[i].pin_right, NULL, NULL);
+		}
 	}
 
 	free(cookie.pulses);

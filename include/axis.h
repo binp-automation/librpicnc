@@ -25,21 +25,30 @@ typedef struct {
 PinAction new_pin_action();
 
 typedef struct Axis {
-	// gpio pins
-	int pin_step;
-	int pin_dir;
-	int pin_left;
-	int pin_right;
+	// gpio masks
+	uint32_t mask_step_pos;
+	uint32_t mask_step_neg;
+	uint32_t mask_dir_pos;
+	uint32_t mask_dir_neg;
+
+	int sense;
+	uint32_t pin_left;
+	uint32_t pin_right;
 	
 	// location
-	uint32_t length;
 	int32_t position;
+	uint32_t length;
 	
 	// current state
 	_AxisState state;
 } Axis;
 
-int axis_init(Axis *axis, int step, int dir, int left, int right);
+int axis_init(
+	Axis *axis,
+	uint32_t mask_step_pos, uint32_t mask_step_neg,
+	uint32_t mask_dir_pos, uint32_t mask_dir_neg,
+	int sense, uint32_t left, uint32_t right
+);
 int axis_free(Axis *axis);
 
 void axis_set_cmd(Axis *axis, Cmd cmd);

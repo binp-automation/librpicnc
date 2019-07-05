@@ -11,13 +11,16 @@
 
 
 typedef struct {
-	int pin_step;
-	int pin_dir;
-	int pin_left;
-	int pin_right;
+	uint32_t mask_step_pos;
+	uint32_t mask_step_neg;
+	uint32_t mask_dir_pos;
+	uint32_t mask_dir_neg;
+	int32_t position;
 
-	int position;
-	int length;
+	int sense;
+	uint32_t pin_left;
+	uint32_t pin_right;
+	uint32_t length;
 } AxisInfo;
 
 
