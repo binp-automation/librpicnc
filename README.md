@@ -1,11 +1,12 @@
 ## TODO
 
-- [+] init func with axes and pins
+- [x] init func with axes and pins
 - [ ] implement sine command
 - [ ] sync state list instead of array
+- [x] mask of pins instead of number
 
 
-- [+] task queue arbitrary size
+- [x] task queue arbitrary size
 - [ ] remove MAX_AXES
 
 
@@ -13,4 +14,4 @@
 
 
 - [ ] check scanned length
-- [+] refactor commands (group moving cmds)
+- [x] refactor commands (group moving cmds)

@@ -215,7 +215,7 @@ PinAction axis_eval_cmd(Axis *axis) {
 						st->phase = 1;
 					} else {
 						pa.off = axis->mask_step_pos;
-						pa.on = axis->mask_step_pos;
+						pa.on = axis->mask_step_neg;
 						st->remain = delay/2 + (delay % 2);
 						st->phase = 0;
 						st->steps -= 1;
