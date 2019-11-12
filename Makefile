@@ -4,7 +4,7 @@ HEADERS=ringbuffer.h command.h generator.h axis.h axis_task.h device.h rpicnc.h 
 SRCS=command.c generator.c axis.c axis_task.c device.c rpicnc.c
 OBJS=$(SRCS:%=$(BD)/%.o)
 LIB=$(BD)/rpicnc.so
-EXAMPLES=simple.c
+EXAMPLES=saw.c turnover.c
 
 CF=-g -Wall -I. -Iinclude -fPIC
 LF=-lm -pthread -L$(BD)/pigpio/

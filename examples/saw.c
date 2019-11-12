@@ -7,11 +7,11 @@ int main(int argc, char *argv[]) {
 	printf("start\n");
 
 	AxisInfo axis_info = {
-		.mask_step_pos=(1<<16),
+		.mask_step_pos=(1<<12),
 		.mask_step_neg=0,
 
-		.mask_dir_pos=0,
-		.mask_dir_neg=(1<<12),
+		.mask_dir_pos=(1<<20),
+		.mask_dir_neg=(1<<16),
 
 		.sense=0,
 		.pin_left=0,
