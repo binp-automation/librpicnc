@@ -35,7 +35,7 @@ $(PIGPIO_OBJS): %: pigpio
 rpicnc: $(LIB)
 
 $(LIB): $(OBJS) $(PIGPIO_OBJS)
-	gcc ${LF} $^ -shared -o $@
+	gcc $^ ${LF} -shared -o $@
 
 $(SRCS:%=$(BD)/%.o): $(BD)/%.o: src/% $(HEADERS:%=include/%)
 	gcc ${CF} -c $< -o $@
@@ -47,4 +47,4 @@ $(EXAMPLES:%=$(BD)/examples/%.o): $(BD)/examples/%.o: examples/% $(HEADERS:%=inc
 	gcc ${CF} -c -I. $< -o $@
 
 $(EXAMPLES:%.c=$(BD)/examples/%): %: %.c.o $(OBJS) $(PIGPIO_OBJS)
-	gcc ${LF} $^ -o $@
+	gcc $^ ${LF} -o $@

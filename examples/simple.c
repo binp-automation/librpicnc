@@ -23,22 +23,23 @@ int main(int argc, char *argv[]) {
 
 	assert(cnc_init(1, &axis_info) == 0);
 
-	float sv = 500;
-	//uint32_t cv = 1000;
+	float min_vel = 500; // steps per second
+	float max_vel = 1000; // steps per second
+	uint32_t acc_steps = 500;
+	uint32_t max_vel_steps = 500;
 
-	float sa = 200;
-	uint32_t ca = 200;
-
-	uint32_t pv = (uint32_t) (1e6/sv);
-	uint32_t pa = (uint32_t) (1e6/sa);
+	uint32_t min_vel_period_us = (uint32_t) (1e6/min_vel);
+	uint32_t max_vel_period_us = (uint32_t) (1e6/max_vel);
 
 	Cmd cmds[] = {
-		cmd_move_acc(1, ca, pa, pv),
-		//cmd_move_vel(1, cv, pv),
-		cmd_move_acc(1, ca, pv, pa),
-		cmd_move_acc(0, ca, pa, pv),
-		//cmd_move_vel(0, cv, pv),
-		cmd_move_acc(0, ca, pv, pa),
+		// Forward
+		cmd_move_acc(1, acc_steps, min_vel_period_us, max_vel_period_us),
+		cmd_move_vel(1, max_vel_steps, max_vel_period_us),
+		cmd_move_acc(1, acc_steps, max_vel_period_us, min_vel_period_us),
+		// Backward
+		cmd_move_acc(0, acc_steps, min_vel_period_us, max_vel_period_us),
+                cmd_move_vel(0, max_vel_steps, max_vel_period_us),
+                cmd_move_acc(0, acc_steps, max_vel_period_us, min_vel_period_us),
 	};
 
 	Task task = {
@@ -55,3 +56,4 @@ int main(int argc, char *argv[]) {
 
 	return 0;
 }
+
